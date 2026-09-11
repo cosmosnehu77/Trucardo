@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Truco distribuido — Sistemas Distribuidos, primer proyecto
 
 Servicio de truco por red: dos jugadores por mesa, varias mesas a la vez. El
@@ -225,3 +226,7 @@ antes de sumarle tolerancia a fallas.
   máquina va a haber que pasarle el puerto.
 - **Se juega sin flor**, y falta la regla de "el envido está primero". Las dos
   son decisiones de alcance, están explicadas en `NOTAS.md`.
+=======
+# Trucardo
+Proyecto de Final de Sitema Distribuido - Truco (Juego de Cartas)
+>>>>>>> e819abbecc91420190224a83a4e6764d69c85061
