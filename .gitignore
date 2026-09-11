@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# entornos virtuales
+.venv/
+venv/
+
+REFACTOR.md
+ruff.toml
