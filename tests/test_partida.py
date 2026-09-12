@@ -248,6 +248,18 @@ def test_falta_envido_vale_lo_que_le_falta_al_que_va_ganando():
     assert partida.terminada and partida.ganador == J1
 
 
+def test_real_envido_y_falta_envido_no_queridos_dan_un_punto():
+    """Cantados solos valen 1 si no los quieren, igual que el envido. Con los
+    envidos encadenados el no querido va a ser lo acumulado, pero eso llega
+    con la pila de cantos (NOTAS.md)."""
+    for canto in (Canto.REAL_ENVIDO, Canto.FALTA_ENVIDO):
+        partida = partida_armada(*GANA_J1)
+        partida.cantar(J1, canto)
+        partida.responder(J2, quiere=False)
+        assert partida.puntos == {J1: 1, J2: 0}, f"{canto} no querido"
+        assert partida.numero_mano == 1, "el envido no querido no corta la mano"
+
+
 def test_el_envido_empatado_lo_gana_el_mano():
     j1 = [Carta(7, E), Carta(5, C), Carta(3, O)]     # 7
     j2 = [Carta(7, O), Carta(4, C), Carta(2, B)]     # 7
@@ -299,6 +311,66 @@ def test_irse_al_mazo_con_truco_querido_da_los_puntos_del_truco():
     partida.responder(J2, quiere=True)
     partida.irse_al_mazo(J1)
     assert partida.puntos[J2] == 2
+
+
+def test_solo_se_va_al_mazo_el_que_tiene_el_turno():
+    partida = partida_armada(*GANA_J1)
+    assert partida.turno == J1
+    try:
+        partida.irse_al_mazo(J2)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("J2 no tenia el turno")
+    assert partida.puntos == {J1: 0, J2: 0}
+
+
+def test_el_que_canto_no_se_va_al_mazo_mientras_espera_la_respuesta():
+    """Con un canto sin responder, el turno es del que tiene que contestar."""
+    partida = partida_armada(*GANA_J1)
+    partida.cantar(J1, Canto.TRUCO)
+    try:
+        partida.irse_al_mazo(J1)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("J1 esta esperando que J2 conteste")
+
+
+def test_irse_al_mazo_con_un_envido_sin_responder_es_no_quererlo():
+    """El que canto cobra el envido no querido (1) y ademas la mano (1)."""
+    for canto in (Canto.ENVIDO, Canto.REAL_ENVIDO, Canto.FALTA_ENVIDO):
+        partida = partida_armada(*GANA_J1)
+        partida.cantar(J1, canto)
+        partida.irse_al_mazo(J2)
+        assert partida.puntos == {J1: 2, J2: 0}, f"{canto} sin responder"
+        assert partida.numero_mano == 2, "irse al mazo corta la mano"
+
+
+def test_irse_al_mazo_con_un_truco_sin_responder_es_no_quererlo():
+    partida = partida_armada(*GANA_J1)
+    partida.cantar(J1, Canto.TRUCO)
+    partida.irse_al_mazo(J2)
+    assert partida.puntos == {J1: 1, J2: 0}, "truco no querido: 1"
+    assert partida.numero_mano == 2
+
+
+def test_irse_al_mazo_con_un_retruco_sin_responder_es_no_quererlo():
+    partida = partida_armada(*GANA_J1)
+    partida.cantar(J1, Canto.TRUCO)
+    partida.responder(J2, quiere=True)
+    partida.cantar(J2, Canto.RETRUCO)       # sube el que quiso
+    partida.irse_al_mazo(J1)
+    assert partida.puntos == {J1: 0, J2: 2}, "retruco no querido: 2"
+    assert partida.numero_mano == 2
+
+
+def test_el_envido_no_querido_por_irse_al_mazo_puede_cerrar_la_partida():
+    partida = partida_armada(*GANA_J1, puntos={J1: 29, J2: 0})
+    partida.cantar(J1, Canto.ENVIDO)
+    partida.irse_al_mazo(J2)
+    assert partida.terminada and partida.ganador == J1
+    assert partida.puntos == {J1: 30, J2: 0}
 
 
 # --- cierre de la partida ---

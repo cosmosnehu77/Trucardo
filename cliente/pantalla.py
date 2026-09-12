@@ -66,7 +66,7 @@ def carta(naipe, etiqueta=None):
 
 
 def marcador(vista):
-    """El puntaje, de que mano vamos y el reloj logico."""
+    """El puntaje, a cuanto se juega, de que mano vamos y el reloj logico."""
     puntos = vista["puntos"]
     texto = Text(justify="center")
     texto.append(f"{vista['yo']} ", style=f"bold {YO}")
@@ -75,7 +75,7 @@ def marcador(vista):
     texto.append(f"{puntos['rival']}", style=f"bold white on {RIVAL}")
     texto.append(f" {vista['rival']}", style=f"bold {RIVAL}")
 
-    pie = (f"mano {vista['numero_mano']}  ·  "
+    pie = (f"a {vista['puntos_para_ganar']}  ·  mano {vista['numero_mano']}  ·  "
            f"{'sos mano' if vista['soy_mano'] else 'es mano el rival'}  ·  "
            f"reloj {vista['reloj']}")
 

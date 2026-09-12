@@ -39,12 +39,21 @@ PUNTOS_QUERIDO = {
     Canto.VALE_CUATRO: 4,
 }
 
-# Lo que gana el que canto si el rival NO QUIERE: los puntos del canto
-# anterior de la escala (o 1 si era el primero).
+# Lo que gana el que canto si el rival NO QUIERE.
+#
+# Truco: los puntos del canto anterior de la escala. Para cantar retruco
+# antes tuvo que haber un truco querido (y para vale cuatro, un retruco), asi
+# que el no querido es lo que ya estaba en juego.
+#
+# Envido: los envidos SI se encadenan ("envido, real envido") y ahi el no
+# querido vale lo acumulado antes del ultimo canto. Pero encadenar necesita
+# la pila de cantos (NOTAS.md), y hoy cada envido se canta SOLO: un envido
+# solo no querido vale 1, sea envido, real o falta. Cuando entre la pila, el
+# no querido del envido va a salir de la cadena y no de esta tabla si es que nos alcanza el tiempo.
 PUNTOS_NO_QUERIDO = {
     Canto.ENVIDO: 1,
-    Canto.REAL_ENVIDO: 2,
-    Canto.FALTA_ENVIDO: 2,
+    Canto.REAL_ENVIDO: 1,
+    Canto.FALTA_ENVIDO: 1,
     Canto.TRUCO: 1,
     Canto.RETRUCO: 2,
     Canto.VALE_CUATRO: 3,

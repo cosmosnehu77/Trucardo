@@ -13,7 +13,26 @@ distribuida, no por cubrir todas las reglas del truco.
 
 ---
 
-## Pendiente: "el envido está primero"
+## Irse al mazo con un canto sin responder
+
+Solo se va al mazo el que tiene el turno. Si lo que le tocaba era contestar un
+canto, irse al mazo vale como **no quiero** a ese canto:
+
+- A un envido: el que cantó cobra el envido no querido y además se lleva la
+  mano, como en cualquier ida al mazo.
+- A un truco, retruco o vale cuatro: es exactamente un no quiero, que ya corta
+  la mano.
+
+Por eso el cliente ofrece la `m` también cuando hay que responder.
+
+---
+
+## Pendiente: la pila de cantos
+
+Dos reglas necesitan que un canto quede "abajo" esperando mientras se resuelve
+otro, y hoy el motor tiene un solo `Apuesta.pendiente`.
+
+### "El envido está primero"
 
 Si en la **primera** ronda alguien canta TRUCO, el rival puede contestar ENVIDO
 en lugar de quiero / no quiero. Ahí el envido se juega y se cobra ANTES, y
@@ -27,25 +46,43 @@ recién después el truco vuelve a quedar esperando su respuesta.
 Hoy no se puede: `_verificar_canto` en `juego/partida.py` corta antes con "ya
 hay un truco sin responder".
 
-Para implementarlo hace falta una **pila** de cantos (el truco queda abajo
-esperando) en vez de un solo `Apuesta.pendiente`, y que `responder()` sepa a
-cuál de los dos le está contestando.
+### Encadenar envidos
 
-Es una de las reglas complicadas y no suma nada a la parte distribuida, así que
-queda anotada por si sobra tiempo después de la entrega.
+Los envidos se encadenan: "envido, envido", "envido, real envido", "envido,
+envido, real envido", y cualquier cadena puede terminar en falta envido. Lo
+querido se suma, y lo no querido vale lo acumulado **antes** del último canto:
+
+    cantos                          querido          no querido
+    envido                          2                1
+    envido, envido                  4                2
+    real envido                     3                1
+    envido, real envido             5                2
+    envido, envido, real envido     7                4
+    ..., falta envido               lo que falta     lo acumulado (o 1)
+
+Hoy cada envido se canta solo, porque un canto sin responder corta cualquier
+otro. Por eso el no querido de los tres vale 1 y sale de `PUNTOS_NO_QUERIDO`.
+Con la pila, el no querido del envido va a salir de la cadena.
+
+### Qué hace falta
+
+Una **pila** de cantos (el truco o el primer envido quedan abajo esperando) en
+vez de un solo `Apuesta.pendiente`, que `responder()` sepa a cuál le está
+contestando, y que el envido acumule los puntos de la cadena.
+
+Son de las reglas complicadas y no suman nada a la parte distribuida, así que
+quedan anotadas por si sobra tiempo después de la entrega.
 
 ---
 
-## Pendiente: `barajar()` usa `random.shuffle`
+## Resuelto: `barajar()` ya no usa `random.shuffle`
 
-`random.Random(semilla).shuffle` es estable en la práctica en CPython, pero la
-documentación no lo garantiza. Si dos nodos corren versiones distintas de
-Python, podrían repartir distinto, y todo el esquema de replicación se apoya en
-que la misma semilla dé el mismo reparto.
-
-Se arregla reemplazándolo por un Fisher-Yates explícito de cuatro líneas. No se
-hizo todavía porque suma código al archivo más simple del motor, y en la demo
-los dos nodos van a correr la misma versión.
+`random.shuffle` es estable en la práctica en CPython, pero la documentación no
+lo garantiza, y todo el esquema de replicación se apoya en que la misma semilla
+dé el mismo reparto en todos los nodos. Se reemplazó por un Fisher-Yates
+escrito a mano sobre `Random.random()`, que es lo único del módulo cuya
+secuencia sí está garantizada entre versiones. `tests/test_mazo.py` fija el
+reparto de la semilla 1: si alguien cambia el algoritmo, el test lo avisa.
 
 ---
 

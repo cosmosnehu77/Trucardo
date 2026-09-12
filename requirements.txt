@@ -1,3 +1,4 @@
-rich
-Pyro5
-pytest
+rich==15.0.0
+Pyro5==5.17
+Serpent==1.43
+pytest==9.1.1

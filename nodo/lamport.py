@@ -11,12 +11,17 @@
 # contador que solo sube, y al recibir un mensaje se adelanta al del que
 # lo mando. Alcanza para que todos los nodos apliquen las operaciones en
 # el mismo orden, que es lo unico que necesitamos.
+#
+# Como se usa en Trucardo: el cliente estampa cada pedido con tic(), y el
+# nodo, apenas lo recibe, hace recibir() con ese sello. Cada op que entra al
+# log se estampa con tic(), y el cliente hace recibir() con el reloj que viene
+# en cada respuesta.
 
 import threading
 
 
 class Reloj:
-    """Un contador que solo sube. Cada nodo tiene el suyo."""
+    """Un contador que solo sube. Cada nodo y cada cliente tienen el suyo."""
 
     def __init__(self):
         self._valor = 0

@@ -1,4 +1,4 @@
-from juego import CARTAS_POR_JUGADOR, barajar, crear_mazo, repartir
+from juego import CARTAS_POR_JUGADOR, Carta, barajar, crear_mazo, repartir
 
 
 def test_tiene_40_cartas_sin_repetir():
@@ -12,6 +12,19 @@ def test_barajar_es_determinista():
     nodos, sin mandar las 40 cartas por la red."""
     assert barajar(42) == barajar(42)
     assert repartir(42) == repartir(42)
+
+
+def test_el_reparto_de_una_semilla_no_cambia_nunca():
+    """Fija el contrato de barajar(): la semilla 1 reparte siempre esto, en
+    cualquier maquina y con cualquier version de Python.
+
+    Si este test falla, cambio el algoritmo de barajar, y dos nodos con
+    versiones distintas del codigo repartirian cartas distintas con la misma
+    semilla. Si el cambio es a proposito, hay que actualizar el reparto de
+    aca Y levantar todos los nodos con el mismo codigo."""
+    cartas_j1, cartas_j2 = repartir(1)
+    assert cartas_j1 == [Carta(5, "espada"), Carta(11, "espada"), Carta(5, "oro")]
+    assert cartas_j2 == [Carta(5, "basto"), Carta(4, "basto"), Carta(10, "espada")]
 
 
 def test_semillas_distintas_dan_ordenes_distintos():

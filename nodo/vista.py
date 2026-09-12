@@ -31,6 +31,9 @@ def armar_vista(mesa, sesion, reloj):
         "yo": sesion.nombre,
         "rival": mesa.nombres.get(rival(yo)),
         "reloj": reloj.valor,
+        # a cuanto se juega: se sabe desde que se crea la mesa, antes de que
+        # exista la partida
+        "puntos_para_ganar": mesa.puntos,
         "estado": "esperando_rival",
         "numero_mano": 0,
         "soy_mano": False,

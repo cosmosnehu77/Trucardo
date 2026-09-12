@@ -193,9 +193,26 @@ class Partida:
     # --- irse al mazo ---
 
     def irse_al_mazo(self, jugador):
-        """Abandona la mano: el rival se lleva lo que este en juego."""
-        if self.terminada:
-            raise ValueError("la partida ya termino")
+        """Abandona la mano: el rival se lleva lo que este en juego.
+
+        Solo en su turno. Si lo que le tocaba era contestar un canto, irse al
+        mazo vale como NO QUIERO a ese canto:
+          - a un envido: el que canto cobra el envido no querido, y ademas se
+            lleva la mano como en cualquier ida al mazo.
+          - a un truco, retruco o vale cuatro: es exactamente un no quiero,
+            que ya corta la mano por su cuenta.
+        """
+        self._verificar_turno(jugador)
+
+        if self.apuesta.pendiente is not None:
+            # Con un canto sin responder el turno es del que contesta, asi que
+            # el que canto es siempre el rival de este jugador.
+            cantor, canto = self.apuesta.pendiente
+            self.apuesta.pendiente = None
+            self._no_quiero(cantor, canto)
+            if not canto.es_de_envido:
+                return
+
         self._terminar_mano(rival(jugador), self.apuesta.puntos)
 
     # --- cierre ---

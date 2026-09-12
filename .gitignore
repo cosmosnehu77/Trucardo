@@ -9,3 +9,6 @@ venv/
 
 REFACTOR.md
 ruff.toml
+
+#carpeta de devs
+proj/
