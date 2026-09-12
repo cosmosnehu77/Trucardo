@@ -23,9 +23,11 @@ from typing import NamedTuple
 NODOS_POR_DEFECTO = "1@localhost:9500:9600"
 PUNTOS_POR_DEFECTO = 15
 
-# Los tiempos del cluster, en segundos (D8 de la guia tecnica). Todavia no los
-# usa nadie: quedan aca para que la deteccion de fallas, la replicacion y el
-# cliente lean todos los mismos valores.
+# Los tiempos del cluster, en segundos (D8 de la guia tecnica). Estan todos
+# aca para que la deteccion de fallas, la replicacion y el cliente lean los
+# mismos valores. LATIDO y TIMEOUT_CAIDO los usa nodo/membresia.py, y
+# TIMEOUT_RPC cliente/quien_es.py. Los demas los van a usar la eleccion, la
+# replicacion y el cliente cuando cambie de nodo solo.
 LATIDO = 1.0            # cada cuanto late el primario
 TIMEOUT_CAIDO = 3.0     # tanto tiempo sin latidos y el primario se da por muerto
 JITTER = (0.5, 2.5)     # espera al azar antes de arrancar una eleccion, para no arrancar todos juntos

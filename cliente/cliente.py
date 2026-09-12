@@ -5,8 +5,9 @@
 #
 #   python3 -m cliente.cliente [nombre]
 #
-# A que nodo le habla sale de TRUCARDO_NODOS (nodo/config.py), la misma
-# variable que usan los nodos. Por ahora, al primero de la lista.
+# A que nodos puede hablarles sale de TRUCARDO_NODOS (nodo/config.py), la
+# misma variable que usan los nodos. Al arrancar le pregunta al primero de la
+# lista quien es el primario, y le habla a ese.
 #
 # La interfaz no conoce NINGUNA regla del truco. Que se puede cantar lo decide
 # el motor y viaja en vista["cantos_posibles"]; aca solo se arma el menu. Asi no
@@ -68,10 +69,15 @@ class Accion(NamedTuple):
 
 class Cliente:
     def __init__(self, host, puerto):
-        self.servidor = Pyro5.api.Proxy(f"PYRO:{NOMBRE_OBJETO}@{host}:{puerto}")
         self.consola = Console()
         self.reloj = Reloj()            # el reloj de Lamport de este cliente
         self.id_sesion = None
+        self.conectar(host, puerto)
+
+    def conectar(self, host, puerto):
+        """Apunta el cliente a otro nodo. El reloj y la sesion no cambian:
+        siguen siendo del mismo jugador."""
+        self.servidor = Pyro5.api.Proxy(f"PYRO:{NOMBRE_OBJETO}@{host}:{puerto}")
 
     # ---------- entrar ----------
 
@@ -210,8 +216,9 @@ def main():
     nombre = (sys.argv[1] if len(sys.argv) > 1
               else input("Tu nombre: ").strip()) or f"jugador-{uuid.uuid4().hex[:4]}"
 
-    # Por ahora el cliente le habla al primer nodo de TRUCARDO_NODOS. Buscar
-    # al primario entre todos, y pasarse a otro si se cae, viene despues.
+    # Por ahora le pregunta al primer nodo de TRUCARDO_NODOS quien es el
+    # primario, y se conecta a ese. Probar con otro nodo si el primero no
+    # contesta, y cambiarse solo si el primario se cae, viene despues.
     try:
         nodos = config.nodos()
     except ValueError as error:
@@ -219,9 +226,15 @@ def main():
     nodo = nodos[min(nodos)]
 
     cliente = Cliente(nodo.host, nodo.puerto_pyro)
-    primario = cliente._llamar("quien_es_primario")
-    cliente.consola.print(f"[green]✓[/] conectado — el primario es el nodo "
-                          f"[bold]{primario['primario']}[/]")
+    primario = cliente._llamar("quien_es_primario")["primario"]
+    if primario is None:
+        sys.exit(f"el nodo {nodo.id_nodo} no sabe quien es el primario: proba en unos segundos")
+    if primario not in nodos:
+        sys.exit(f"el nodo {nodo.id_nodo} dice que el primario es el {primario}, "
+                 f"que no esta en TRUCARDO_NODOS")
+    if primario != nodo.id_nodo:
+        cliente.conectar(nodos[primario].host, nodos[primario].puerto_pyro)
+    cliente.consola.print(f"[green]✓[/] conectado al primario, el nodo [bold]{primario}[/]")
     cliente.entrar(nombre)
     try:
         cliente.jugar()

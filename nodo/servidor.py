@@ -22,8 +22,12 @@
 # que hace el nodo es adelantarse con reloj.recibir() (requisito 5). Vale 0
 # si no lo mandan, para que una prueba a mano siga andando.
 #
-# Todavia no hay backups ni eleccion: esto es el "camino normal" que el
-# enunciado recomienda tener andando antes de sumarle tolerancia a fallas.
+# Cada nodo tiene dos puertos: el de Pyro5, para los clientes, y el del
+# cluster, para hablar con los otros nodos (TCP + JSON, nodo/transporte.py).
+# Los latidos y la vigilancia viven en nodo/membresia.py.
+#
+# Todavia no hay replicacion ni eleccion: el primario es fijo (el de id
+# mayor) y los backups solo detectan cuando se cae.
 
 import random
 import sys
@@ -35,6 +39,7 @@ import Pyro5.api
 from nodo import config, registro
 from nodo.estado import EstadoServicio
 from nodo.lamport import Reloj
+from nodo.membresia import Membresia
 from nodo.registro import log
 from nodo.vista import armar_vista
 
@@ -56,7 +61,7 @@ Pyro5.config.SERVERTYPE = "thread"
 
 @Pyro5.api.expose
 class ServidorTruco:
-    def __init__(self, id_nodo=1, puntos=None):
+    def __init__(self, id_nodo=1, puntos=None, primario=None):
         self.id_nodo = id_nodo
         # A cuanto se juegan las mesas que se creen en este nodo. Si no se
         # dice, sale de la variable PUNTOS.
@@ -69,9 +74,13 @@ class ServidorTruco:
         # a _atender(), que lo vuelve a tomar.
         self.lock = threading.RLock()
 
-        # Rol y epoca: hoy fijos, porque hay un solo nodo. Los van a mover la
-        # eleccion y el fencing; ya existen para que los logs los muestren.
-        self.rol = "primario"
+        # Rol, epoca y primario: el estado propio de este nodo. Hasta que haya
+        # eleccion, el primario lo fija la configuracion (main() elige el de
+        # id mayor). Si no se dice, el nodo es su propio primario, que es
+        # como anda con un solo nodo. Los mueve la membresia
+        # (nodo/membresia.py); mas adelante, tambien la eleccion.
+        self.primario = id_nodo if primario is None else primario
+        self.rol = "primario" if self.primario == id_nodo else "backup"
         self.epoca = 0
 
         # Las mesas, las sesiones y el log de ops: lo que se replica. Lo de
@@ -83,16 +92,21 @@ class ServidorTruco:
     def quien_es_primario(self, lamport=0):
         """El equivalente del QUIEN de la Actividad 9.
 
-        Hoy siempre contesta que es el: hay un solo nodo. Cuando esten los
-        backups, aca va a contestar quien gano la ultima eleccion, y el cliente
-        no cambia. ultimo_seq dice que tan al dia esta este nodo: la eleccion
-        va a elegir al que tenga el mayor.
+        Lo contesta cualquier nodo, primario o backup: dice a quien cree que
+        hay que hablarle. primario viene en None si lo acaba de dar por caido
+        y todavia no sabe quien lo reemplaza. ultimo_seq dice que tan al dia
+        esta este nodo: la eleccion va a elegir al que tenga el mayor.
         """
+        self.reloj.recibir(lamport)
+        return self._quien()
+
+    def _quien(self):
+        """El resumen de este nodo. Lo usan quien_es_primario() (los clientes,
+        por Pyro) y el mensaje QUIEN (los otros nodos, por TCP)."""
         with self.lock:
-            self.reloj.recibir(lamport)
-            return {"primario": self.id_nodo, "soy_yo": self.rol == "primario",
-                    "epoca": self.epoca, "ultimo_seq": self.estado.ultimo_seq,
-                    "reloj": self.reloj.valor}
+            return {"primario": self.primario, "soy_yo": self.rol == "primario",
+                    "rol": self.rol, "epoca": self.epoca,
+                    "ultimo_seq": self.estado.ultimo_seq, "reloj": self.reloj.valor}
 
     # ---------- entrar a una partida ----------
 
@@ -240,13 +254,22 @@ def main():
     id_nodo = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     try:
         cluster = config.nodos()
-        servidor = ServidorTruco(id_nodo)
+        if id_nodo not in cluster:
+            sys.exit(f"el nodo {id_nodo} no esta en TRUCARDO_NODOS (estan: {sorted(cluster)})")
+        # Hasta que haya eleccion manda el de id mayor. Es el mismo que va a
+        # ganar la primera, porque al arrancar todos tienen ultimo_seq 0.
+        servidor = ServidorTruco(id_nodo, primario=max(cluster))
     except ValueError as error:
         sys.exit(f"configuracion invalida: {error}")
-    if id_nodo not in cluster:
-        sys.exit(f"el nodo {id_nodo} no esta en TRUCARDO_NODOS (estan: {sorted(cluster)})")
     yo = cluster[id_nodo]
     registro.configurar(servidor)
+
+    membresia = Membresia(servidor, cluster)
+    try:
+        membresia.arrancar()
+    except OSError as error:
+        sys.exit(f"no puedo escuchar en el puerto del cluster {yo.puerto_cluster}: {error}. "
+                 f"Si dice 'Address already in use', hay otro nodo con ese puerto.")
 
     # Sin name server, como en la Actividad 5: el cliente se conecta con la URI
     # directa. Un name server seria otro proceso del que depender, y justamente
@@ -254,12 +277,16 @@ def main():
     daemon = Pyro5.api.Daemon(host="0.0.0.0", port=yo.puerto_pyro)
     daemon.register(servidor, NOMBRE_OBJETO)
     log.info(f"escuchando en PYRO:{NOMBRE_OBJETO}@<tu-ip>:{yo.puerto_pyro} "
-             f"· mesas a {servidor.puntos} puntos")
+             f"· cluster en el puerto {yo.puerto_cluster} · mesas a {servidor.puntos} puntos")
+    log.info(f"nodos {sorted(cluster)} · el primario es N{servidor.primario} "
+             f"(el de id mayor, hasta que haya eleccion)")
     log.info("Ctrl+C para salir.")
     try:
         daemon.requestLoop()
     except KeyboardInterrupt:
         log.info("chau.")
+    finally:
+        membresia.detener()
 
 
 if __name__ == "__main__":
