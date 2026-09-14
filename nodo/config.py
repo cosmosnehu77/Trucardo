@@ -20,6 +20,7 @@
 import os
 from typing import NamedTuple
 
+
 NODOS_POR_DEFECTO = "1@localhost:9500:9600"
 PUNTOS_POR_DEFECTO = 15
 
@@ -34,7 +35,7 @@ JITTER = (0.5, 2.5)     # espera al azar antes de arrancar una eleccion, para no
 TIMEOUT_ACK = 1.0       # lo que espera el primario que un backup confirme una replica
 TIMEOUT_RPC = 2.0       # lo que espera el cliente una respuesta antes de probar otro nodo
 REINTENTO_TOTAL = 25.0  # lo que insiste el cliente antes de decir "sin servicio"
-
+TIMEOUT_ELECCION = 8.0  # sin primario y sin eleccion que termine, reintento
 
 class Nodo(NamedTuple):
     """Donde encontrar a un nodo del cluster."""

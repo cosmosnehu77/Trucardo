@@ -87,6 +87,10 @@ class Mano:
     def _cerrar_ronda(self, segundo, carta_del_segundo):
         """Guarda la ronda. Una Ronda es (carta del j1, carta del j2), asi que
         hay que ponerlas en ese orden y no en el que se tiraron."""
+
+        if self.pendiente is None:
+            raise RuntimeError("_cerrar_ronda llamado sin pendiente")
+
         primero, carta_del_primero = self.pendiente
         self.pendiente = None
 

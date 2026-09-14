@@ -24,6 +24,7 @@
 # y recibir tambien (recibir): asi el reloj de Lamport cubre tambien lo que
 # pasa entre nodos.
 
+import random
 import threading
 import time
 
@@ -32,13 +33,17 @@ from nodo.registro import log
 
 
 class Membresia:
-    def __init__(self, nodo, cluster, latido=config.LATIDO, timeout=config.TIMEOUT_CAIDO):
+    def __init__(self, nodo, cluster, latido=config.LATIDO, timeout=config.TIMEOUT_CAIDO, jitter=config.JITTER,
+        timeout_eleccion=config.TIMEOUT_ELECCION):
+
         """`nodo` es el ServidorTruco de este proceso y `cluster` lo que
         devuelve config.nodos(). Los tiempos se achican en los tests."""
         self.nodo = nodo
         self.cluster = cluster
         self.latido = latido
         self.timeout = timeout
+        self.jitter = jitter
+        self.timeout_eleccion = timeout_eleccion
 
         # Del primario: los que contestaron el ultimo latido, con el
         # ultimo_seq que dijeron tener. Es a quien se le va a replicar.
@@ -47,8 +52,18 @@ class Membresia:
         # con la hora: la hora puede saltar (NTP, alguien la cambia) e
         # inventar un silencio que no paso, o esconder uno que si.
         self.ultimo_latido = time.monotonic()
+        # De la eleccion: si ya largue una y no termino (_convocando) y desde
+        # cuando esta en curso. _convocando es el que evita que el vigia y un
+        # ELECCION que llega juntos larguen dos candidaturas del mismo nodo.
+        self._convocando = False
+        self.eleccion_desde = None
 
-        self._manejadores = {"LATIDO": self._al_latido, "QUIEN": self._al_quien}
+        self._manejadores = {
+            "LATIDO": self._al_latido,
+            "QUIEN": self._al_quien,
+            "ELECCION": self._al_eleccion,
+            "COORDINADOR": self._al_coordinador}
+
         self._detenido = threading.Event()
         self._escucha = None
 
@@ -93,6 +108,41 @@ class Membresia:
         nodo = self.cluster[id_nodo]
         return (nodo.host, nodo.puerto_cluster)
 
+    def _preguntar_a_todos(self, mensaje):
+        """Le manda `mensaje` a todo el cluster y devuelve {id_nodo: respuesta}
+        con los que contestaron. El que no contesta no aparece: la ausencia es
+        la respuesta, y por eso el que llama puede contar cuantos son.
+
+        Cada envio va en su propio hilo, igual que los latidos: uno que no
+        contesta tarda su timeout en fallar y no atrasa a los demas. El mensaje
+        ya viene estampado de mensaje(), asi que a todos les llega el mismo
+        lamport: mandarlo fue un solo evento, no uno por destinatario.
+        """
+        respuestas = {}
+        candado = threading.Lock()
+
+        def preguntar_a(id_nodo):
+            try:
+                respuesta = transporte.enviar(self._direccion(id_nodo), mensaje,
+                                              timeout=self.latido)
+            except OSError:
+                return
+            self.nodo.reloj.recibir(respuesta.get("lamport", 0))
+            with candado:
+                respuestas[id_nodo] = respuesta
+
+        hilos = [threading.Thread(target=preguntar_a, args=(id_nodo,), daemon=True)
+                 for id_nodo in self.cluster if id_nodo != self.nodo.id_nodo]
+        for hilo in hilos:
+            hilo.start()
+        for hilo in hilos:
+            # Margen sobre el timeout del transporte: si igual se pasa, lo doy
+            # por no contestado y sigo. El candado es porque ese hilo tardio
+            # todavia puede estar escribiendo cuando yo ya me lleve el dict.
+            hilo.join(self.latido * 2)
+        with candado:
+            return dict(respuestas)
+
     # ---------- del lado del primario ----------
 
     def _latir(self):
@@ -127,7 +177,23 @@ class Membresia:
             return
 
         self.nodo.reloj.recibir(respuesta.get("lamport", 0))
+
+        if not respuesta.get("ok"):
+            with self.nodo.lock:
+                if respuesta.get("motivo") == "EPOCA_VIEJA" and self.nodo.rol == "primario":
+                    log.info(f"N{id_nodo} me rechaza el latido: hay epoca "
+                             f"{respuesta.get('epoca')} y yo estoy en la {self.nodo.epoca}")
+                    self.nodo.rol = "backup"
+                    self.nodo.epoca = max(self.nodo.epoca, respuesta.get("epoca", 0))
+                    self.nodo.primario = None
+                    self.vivos.clear()
+                    self.ultimo_latido = time.monotonic()
+                    self.eleccion_desde = None
+            return
+
         su_seq = respuesta.get("ultimo_seq", 0)
+
+
         with self.nodo.lock:
             if id_nodo not in self.vivos:
                 log.info(f"N{id_nodo} entra a la vista (ultimo_seq {su_seq})")
@@ -139,34 +205,175 @@ class Membresia:
 
     def _al_latido(self, mensaje):
         """Late el primario: anoto que esta vivo y le digo que tan al dia estoy."""
-        origen = mensaje["origen"]
+        origen, epoca = mensaje["origen"], mensaje.get("epoca", 0)
+
         with self.nodo.lock:
-            # Un primario no adopta a otro. Con el primario fijo no puede
-            # pasar; cuando haya eleccion, lo va a resolver la epoca.
-            if self.nodo.rol == "backup":
-                if self.nodo.primario != origen:
-                    log.info(f"N{origen} es el primario: me llegan sus latidos")
-                    self.nodo.primario = origen
-                self.ultimo_latido = time.monotonic()
+
+            if (self.nodo.rol == "primario" and not self._le_cedo(origen, epoca)) or epoca < self.nodo.epoca:
+                return {"ok": False, "motivo": "EPOCA_VIEJA", "epoca": self.nodo.epoca}
+
+            self._adoptar_primario(origen, epoca)
+
             return {"ok": True, "ultimo_seq": self.nodo.estado.ultimo_seq,
-                    "epoca": self.nodo.epoca}
+                            "epoca": self.nodo.epoca}
+
 
     def _vigilar(self):
         """Cada medio latido, si soy backup, me fijo hace cuanto no late el
         primario. Pasado el timeout, lo doy por caido."""
         while not self._detenido.wait(self.latido / 2):
             with self.nodo.lock:
-                if self.nodo.rol != "backup" or self.nodo.primario is None:
+                if self.nodo.rol != "backup":
                     continue
-                silencio = time.monotonic() - self.ultimo_latido
-                if silencio < self.timeout:
-                    continue
-                log.info(f"{silencio:.1f} s sin latido de N{self.nodo.primario}: "
+
+                if self.nodo.primario is None:
+                    # Una candidatura mia viva no es "no termino": esta
+                    # corriendo. Sin _convocando, una eleccion mas larga que
+                    # timeout_eleccion hace gritar "reintento" cada medio latido.
+                    en_curso = self._convocando or (
+                        self.eleccion_desde is not None and
+                        time.monotonic() - self.eleccion_desde < self.timeout_eleccion)
+
+
+                    if en_curso:
+                        continue
+                    log.info("sigo sin primario y la eleccion no termino: reintento")
+
+                else:
+                    silencio = time.monotonic() - self.ultimo_latido
+                    if silencio < self.timeout:
+                        continue
+                    log.info(f"{silencio:.1f} s sin latido de N{self.nodo.primario}: "
                          f"lo doy por caido")
-                # Ya no se quien manda: es el "NO SE" de la Actividad 9. Cuando
-                # haya eleccion, arranca aca: una espera al azar (config.JITTER)
-                # por si otro ya la empezo, y despues ELECCION al siguiente.
-                self.nodo.primario = None
+                    self.nodo.primario = None
+
+            self._convocar_aparte()
+
+    # ---------- eleccion ----------
+    #
+    # La arranca un backup que se quedo sin primario (_vigilar) o uno al que le
+    # llega un ELECCION de alguien peor que el (_al_eleccion). El candidato
+    # pregunta, y si nadie le gana y le contesta la mayoria, se corona.
+
+    def _credenciales(self):
+        """Con que me postulo, y en que orden se comparan: primero el que mas
+        al dia esta, y si empatan gana el id mas alto. Es la regla de la
+        eleccion, por eso vive en un solo lugar. Se llama con el lock tomado."""
+        return (self.nodo.estado.ultimo_seq, self.nodo.id_nodo)
+
+    def _adoptar_primario(self, origen, epoca):
+        """Reconozco a N{origen} como primario de esta epoca. Unico lugar donde
+        este nodo cambia de primario. Se llama con el lock tomado."""
+
+        if self.nodo.rol == "primario":
+            log.info(f"N{origen} manda en la epoca {epoca}: dejo de ser primario")
+            self.vivos.clear()
+
+        elif (self.nodo.epoca, self.nodo.primario) != (epoca, origen):
+            log.info(f"N{origen} es el primario de la epoca {epoca}")
+
+        self.nodo.rol = "backup"
+        self.nodo.epoca = epoca
+        self.nodo.primario = origen
+        self.ultimo_latido = time.monotonic()
+        self.eleccion_desde = None
+
+
+    def _le_cedo (self, origen, epoca):
+        """Dos que se creen primario, el de epoca menor se baja, sino el de id menor"""
+        return (epoca, origen) > (self.nodo.epoca, self.nodo.id_nodo)
+
+
+    def _convocar_aparte(self):
+        """Larga _convocar() en su propio hilo, y una sola a la vez."""
+        with self.nodo.lock:
+            if self._convocando:
+                return
+            self._convocando = True
+            self.eleccion_desde = time.monotonic()
+        threading.Thread(target=self._convocar, daemon=True).start()
+
+    def _convocar(self):
+        """Me postulo: ELECCION a todos, y si nadie me gana, me corono.
+
+        El jitter es para que dos backups que detectan la caida en el mismo
+        segundo no arranquen dos elecciones identicas y simultaneas.
+        """
+        try:
+            time.sleep(random.uniform(*self.jitter))
+            with self.nodo.lock:
+
+                if self.eleccion_desde is None:
+                    return
+
+                ultimo_seq = self.nodo.estado.ultimo_seq
+                pedido = self.mensaje("ELECCION", ultimo_seq=ultimo_seq)
+            log.info(f"arranco una eleccion (ultimo_seq {ultimo_seq})")
+
+            respuestas = self._preguntar_a_todos(pedido)
+            if any(r.get("mando_yo") for r in respuestas.values()):
+                log.info("me gana otro candidato: espero su COORDINADOR")
+                return
+
+            # Mayoria: yo mas los que contestaron. Sin mayoria no me corono,
+            # porque del otro lado de un corte de red puede haber otra mitad
+            # eligiendo su propio primario.
+            if (len(respuestas) + 1) * 2 <= len(self.cluster):
+                log.warning(f"me contestaron {len(respuestas)} de "
+                            f"{len(self.cluster) - 1}: sin mayoria no me corono")
+                return
+            self._coronarme(respuestas)
+        finally:
+            with self.nodo.lock:
+                self._convocando = False
+
+    def _coronarme(self, respuestas):
+        """Gane: subo la epoca, me pongo primario y lo anuncio."""
+        with self.nodo.lock:
+            # La epoca mas alta que vio cualquiera, mas uno: asi no reuso un
+            # numero de epoca que alguien ya conocia.
+            vistas = [self.nodo.epoca] + [r.get("epoca", 0) for r in respuestas.values()]
+            self.nodo.epoca = max(vistas) + 1
+            self.nodo.rol = "primario"
+            self.nodo.primario = self.nodo.id_nodo
+            self.eleccion_desde = None
+            # Los que me contestaron ya son mi vista, con lo que les falta.
+            self.vivos = {i: r.get("ultimo_seq", 0) for i, r in respuestas.items()}
+            aviso = self.mensaje("COORDINADOR")
+            epoca = self.nodo.epoca
+        log.info(f"gano la eleccion: soy el primario de la epoca {epoca}")
+        self._preguntar_a_todos(aviso)   # a TODOS, tambien a los que no contestaron
+
+
+    def _al_eleccion(self, mensaje):
+            """ELECCION: otro nodo se postula, le digo si le gano o no."""
+            suyas = (mensaje.get("ultimo_seq", 0), mensaje["origen"])
+            su_epoca = mensaje.get("epoca", 0)
+
+            with self.nodo.lock:
+                mias = self._credenciales()
+                # Una epoca vieja pierde sin mirar credenciales: se postula alguien
+                # que no se entero de la ultima eleccion.
+                le_gano = su_epoca < self.nodo.epoca or mias > suyas
+                if not le_gano:
+                    self.eleccion_desde = time.monotonic()
+                respuesta = {"ok": True, "mando_yo": le_gano,
+                             "ultimo_seq": mias[0], "epoca": self.nodo.epoca}
+
+            if le_gano:
+                self._convocar_aparte()
+            return respuesta
+
+    def _al_coordinador(self, mensaje):
+        """COORDINADOR: gano otro, lo adopto como primario ahora """
+        origen,epoca = mensaje ["origen"] , mensaje.get("epoca", 0)
+
+        with self.nodo.lock:
+            if epoca < self.nodo.epoca:
+                return {"ok" :False, "motivo": "EPOCA_VIEJA", "epoca": self.nodo.epoca}
+
+            self._adoptar_primario(origen,epoca)
+            return {"ok": True, "ultimo_seq": self.nodo.estado.ultimo_seq}
 
     # ---------- consultas ----------
 
