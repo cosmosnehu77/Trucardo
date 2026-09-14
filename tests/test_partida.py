@@ -5,8 +5,7 @@ J1, J2 = 1, 2
 
 
 def partida_armada(cartas_j1, cartas_j2, el_mano=J1, puntos=None):
-    """Una partida con un reparto elegido a mano, para probar reglas
-    concretas sin depender de que salga la semilla justa."""
+    """Una partida con un reparto elegido a mano."""
     partida = Partida(semilla=0)
     partida.el_mano = el_mano
     partida.mano = Mano(cartas_j1, cartas_j2, el_mano=el_mano)
@@ -21,8 +20,7 @@ GANA_J1 = ([Carta(1, E), Carta(1, B), Carta(7, E)],
 
 
 def jugar_mano_entera(partida):
-    """Tira cartas hasta que se termina la mano en curso (con el reparto
-    GANA_J1 las gana J1) o se termina la partida."""
+    """Tira cartas hasta que termina la mano en curso o la partida."""
     numero = partida.numero_mano
     while partida.numero_mano == numero and not partida.terminada:
         jugador = partida.turno
@@ -42,8 +40,7 @@ def test_arranca_en_cero_y_reparte():
 
 
 def test_misma_semilla_misma_partida():
-    """Lo que hace posible la replicacion: el backup reconstruye la
-    partida desde la semilla, sin que viajen las cartas."""
+    """Un backup reconstruye la partida desde la semilla."""
     a, b = Partida(semilla=99), Partida(semilla=99)
     assert a.cartas_de(J1) == b.cartas_de(J1)
     assert a.cartas_de(J2) == b.cartas_de(J2)
@@ -249,9 +246,7 @@ def test_falta_envido_vale_lo_que_le_falta_al_que_va_ganando():
 
 
 def test_real_envido_y_falta_envido_no_queridos_dan_un_punto():
-    """Cantados solos valen 1 si no los quieren, igual que el envido. Con los
-    envidos encadenados el no querido va a ser lo acumulado, pero eso llega
-    con la pila de cantos (NOTAS.md)."""
+    """Cantados solos valen 1 si no los quieren, igual que el envido."""
     for canto in (Canto.REAL_ENVIDO, Canto.FALTA_ENVIDO):
         partida = partida_armada(*GANA_J1)
         partida.cantar(J1, canto)
@@ -409,7 +404,6 @@ def test_no_se_puede_jugar_una_partida_terminada():
 
 
 def test_el_servidor_puede_ver_las_cartas_de_cada_jugador_por_separado():
-    """cartas_de() es lo que el nodo le va a mandar a cada cliente:
-    nunca la Partida entera, que tiene las dos manos."""
+    """cartas_de() es lo que ve cada cliente: nunca las dos manos."""
     partida = Partida(semilla=11)
     assert set(partida.cartas_de(J1)).isdisjoint(partida.cartas_de(J2))

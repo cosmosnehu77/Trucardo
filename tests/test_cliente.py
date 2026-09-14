@@ -1,18 +1,17 @@
-"""El cliente: los ids de operacion, el menu, y como llega al nodo.
-
-Cliente() arma el proxy, pero Pyro5 no se conecta hasta la primera llamada,
-asi que casi todo se prueba sin ningun servidor levantado."""
+"""El cliente: ids de operacion, menu y como llega al nodo. Cliente() no se
+conecta a nada hasta la primera llamada."""
 
 import threading
 
 import Pyro5.api
 
 from cliente.cliente import Cliente
+from nodo import config
 from nodo.servidor import NOMBRE_OBJETO, ServidorTruco
 
 
 def _cliente():
-    return Cliente("localhost", 9500)
+    return Cliente(config.nodos("1@localhost:9500:9600"))
 
 
 def _vista(**cambios):
@@ -33,9 +32,7 @@ def test_cada_operacion_lleva_un_id_distinto():
 
 
 def test_un_cliente_que_retoma_la_sesion_no_repite_ids():
-    """El bug del contador: dos procesos con el mismo id_sesion arrancaban
-    los dos en 1 y mandaban el mismo id_operacion, y el servidor tomaba la
-    jugada nueva por un reintento de la vieja."""
+    """Dos procesos con el mismo id_sesion no generan el mismo id_operacion."""
     antes, despues = _cliente(), _cliente()
     antes.id_sesion = despues.id_sesion = "c0ffee" * 5
     assert antes._id_operacion() != despues._id_operacion()
@@ -49,7 +46,6 @@ def test_en_el_turno_normal_estan_las_cartas_los_cantos_y_el_mazo():
 
 
 def test_al_contestar_un_canto_tambien_se_puede_ir_al_mazo():
-    """El motor cuenta el mazo como no quiero, asi que el menu lo ofrece."""
     vista = _vista(canto_pendiente={"quien": "rival", "canto": "truco"})
     teclas = [accion.tecla for accion in _cliente().acciones(vista)]
     assert teclas == ["q", "n", "m"]
@@ -58,16 +54,16 @@ def test_al_contestar_un_canto_tambien_se_puede_ir_al_mazo():
 # --- llegar al nodo ---
 
 def test_el_cliente_llega_por_localhost_a_un_nodo_que_escucha_en_ipv4():
-    """El nodo escucha en 0.0.0.0, como en main(). Donde 'localhost'
-    resuelve primero a ::1, el cliente rebotaba con "connection refused"
-    hasta que se le pidio a Pyro5 que prefiera IPv4."""
+    """El nodo escucha en 0.0.0.0: el cliente tiene que llegar por IPv4
+    aunque 'localhost' resuelva primero a ::1."""
     daemon = Pyro5.api.Daemon(host="0.0.0.0", port=0)
     daemon.register(ServidorTruco(id_nodo=1, puntos=15), NOMBRE_OBJETO)
     threading.Thread(target=daemon.requestLoop, daemon=True).start()
     try:
         puerto = int(daemon.locationStr.rsplit(":", 1)[1])
-        cliente = Cliente("localhost", puerto)
-        assert cliente.servidor.quien_es_primario()["primario"] == 1
+        cliente = Cliente(config.nodos(f"1@localhost:{puerto}:9600"))
+        assert cliente._llamar("quien_es_primario")["primario"] == 1
+        cliente.conexion._soltar()
     finally:
         daemon.shutdown()
 
@@ -75,8 +71,7 @@ def test_el_cliente_llega_por_localhost_a_un_nodo_que_escucha_en_ipv4():
 # --- el reloj de Lamport del cliente ---
 
 class _ServidorFalso:
-    """Se hace pasar por el proxy: anota con que argumentos lo llamaron y
-    contesta con el reloj que se le diga."""
+    """Hace de proxy: anota los argumentos y contesta con el reloj dado."""
 
     def __init__(self, reloj):
         self.reloj = reloj
@@ -88,10 +83,11 @@ class _ServidorFalso:
 
 
 def test_cada_pedido_sale_estampado_y_el_cliente_se_adelanta():
-    """El pedido lleva el sello del cliente como ultimo argumento, y con la
-    respuesta el cliente se pone por delante del reloj del nodo."""
+    """El sello va como ultimo argumento, y con la respuesta el cliente se
+    pone por delante del reloj del nodo."""
     cliente = _cliente()
-    cliente.servidor = _ServidorFalso(reloj=50)
+    falso = _ServidorFalso(reloj=50)
+    cliente.conexion._proxy_a = lambda id_nodo: falso
     cliente._llamar("ver", "c0ffee")
-    assert cliente.servidor.llamadas == [("c0ffee", 1)], "el sello va ultimo"
+    assert falso.llamadas == [("c0ffee", 1)], "el sello va ultimo"
     assert cliente.reloj.valor == 51, "max(1, 50) + 1"

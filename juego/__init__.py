@@ -1,14 +1,5 @@
-# juego/
-#
-# El motor del truco. Puro: sin red, sin I/O, sin Pyro5.
-# Lo distribuido va en otro paquete y usa esto.
-#
-# Aca se reexporta lo que usan los de afuera (nodo/, cliente/, tests/). Los
-# modulos de adentro se importan entre ellos por su nombre completo
-# (`from juego.mano import Mano`), no por aca.
-#
-# Como se dice "quien" (1, 2, 0 para empate, None para sin decidir) esta
-# explicado en juego/jugadores.py y vale para todo el proyecto.
+# El motor del truco, sin red ni I/O. Aca se reexporta lo que usan nodo/,
+# cliente/ y los tests.
 
 from juego.cantos import Canto
 from juego.carta import PALOS, Carta

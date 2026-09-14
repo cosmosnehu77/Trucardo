@@ -10,11 +10,7 @@ _CARTAS = {J1: (Carta(1, E), Carta(4, C)),
 
 
 def jugar_ronda(mano, carta_j1, carta_j2):
-    """Juega una ronda entera respetando el turno y devuelve quien la gano.
-
-    Vive aca y no en Mano porque la usan solo los tests: en una partida de
-    verdad las cartas llegan de a una, desde dos clientes distintos.
-    """
+    """Juega una ronda respetando el turno y devuelve quien la gano."""
     cartas = {J1: carta_j1, J2: carta_j2}
     primero = mano.turno
     mano.jugar(primero, cartas[primero])
@@ -23,8 +19,7 @@ def jugar_ronda(mano, carta_j1, carta_j2):
 
 
 def mano_con(ganadores, el_mano=J1):
-    """Arma una mano con rondas ya resueltas, para probar SOLO la regla
-    de quien gana la mano sin pelearse con el reparto."""
+    """Una mano con rondas ya resueltas, para probar solo quien gana."""
     mano = Mano([Carta(1, E), Carta(2, E), Carta(3, E)],
                 [Carta(1, B), Carta(2, B), Carta(3, B)], el_mano=el_mano)
     mano.rondas = [Ronda(*_CARTAS[g]) for g in ganadores]
@@ -88,7 +83,6 @@ def test_parda_la_ultima_gana_el_de_la_primera():
 
 
 def test_en_curso_mientras_no_este_decidida():
-    """Antes todos estos casos devolvian None y no se distinguian de un error."""
     for parciales in ([], [J1], [J2], [PARDA], [PARDA, PARDA], [J1, J2], [J2, J1]):
         mano = mano_con(parciales)
         assert mano.ganador is None, parciales
@@ -157,8 +151,7 @@ def test_mano_completa_jugada_de_verdad():
 
 
 def test_no_se_puede_jugar_una_carta_que_no_tiene():
-    """Cuando esto sea un servicio en red, el cliente puede mandar
-    cualquier cosa: la validacion va en el motor."""
+    """El cliente puede mandar cualquier cosa: valida el motor."""
     mano = Mano([Carta(1, E), Carta(2, E), Carta(3, E)],
                 [Carta(4, C), Carta(5, C), Carta(6, C)])
     try:
@@ -208,11 +201,8 @@ def test_el_mano_tiene_que_ser_un_jugador():
 
 
 def test_la_convencion_de_jugadores():
-    """1 y 2 son los jugadores, 0 es empate, None es sin decidir.
-
-    Ojo con la trampa que hay que respetar en todo el codigo: PARDA (0)
-    y "sin decidir" (None) son los dos falsy, asi que nunca se pregunta
-    `if ganador:`, siempre se compara explicito."""
+    """1 y 2 son los jugadores, 0 es empate y None sin decidir. 0 y None son
+    los dos falsy: siempre se compara explicito."""
     assert rival(1) == 2 and rival(2) == 1
     for invalido in (0, 3, None):
         try:

@@ -1,9 +1,6 @@
-"""Prueba el servidor por Pyro5 de verdad: levanta un daemon en un hilo y
-le habla con proxies, como lo haria un cliente en otra maquina.
-
-Detalle util: Pyro5 le re-lanza al cliente la excepcion ORIGINAL, asi que
-un ValueError del motor llega como ValueError y con su mensaje intacto.
-Por eso los tests atrapan ValueError y no PyroError."""
+"""El servidor por Pyro5 de verdad: un daemon en un hilo y proxies, como un
+cliente en otra maquina. Pyro5 re-lanza la excepcion original, asi que un
+ValueError del motor llega como ValueError."""
 
 import random
 import threading
@@ -12,6 +9,7 @@ import uuid
 import Pyro5.api
 import Pyro5.errors
 
+from nodo.errores import NoPrimario
 from nodo.servidor import NOMBRE_OBJETO, ServidorTruco
 
 _daemon = None
@@ -23,16 +21,14 @@ def _servidor():
     global _daemon, _uri
     if _uri is None:
         _daemon = Pyro5.api.Daemon(host="127.0.0.1", port=0)
-        # A 30 explicito: la partida completa verifica que se termina en 30,
-        # y eso no puede depender de la variable PUNTOS de quien corre los tests.
+        # a 30 fijo: no puede depender de la variable PUNTOS
         _uri = _daemon.register(ServidorTruco(id_nodo=1, puntos=30), NOMBRE_OBJETO)
         threading.Thread(target=_daemon.requestLoop, daemon=True).start()
     return Pyro5.api.Proxy(_uri)
 
 
 def _id():
-    """Un id_sesion nuevo. Lo inventa el cliente, asi que en los tests
-    tambien."""
+    """Un id_sesion nuevo (lo inventa el cliente)."""
     return uuid.uuid4().hex
 
 
@@ -47,11 +43,33 @@ def _mesa_lista():
 # --- lo basico ---
 
 def test_el_servidor_contesta_quien_es_primario():
-    """El equivalente del QUIEN de la Actividad 9: el cliente pregunta a
-    quien le tiene que hablar."""
     respuesta = _servidor().quien_es_primario()
     assert respuesta["primario"] == 1
     assert respuesta["soy_yo"] is True
+
+
+def test_un_backup_no_atiende_y_dice_quien_manda():
+    """Un backup contesta NoPrimario con quien manda, y la excepcion llega
+    entera por Pyro5."""
+    daemon = Pyro5.api.Daemon(host="127.0.0.1", port=0)
+    uri = daemon.register(ServidorTruco(id_nodo=1, puntos=15, primario=3), NOMBRE_OBJETO)
+    threading.Thread(target=daemon.requestLoop, daemon=True).start()
+    try:
+        with Pyro5.api.Proxy(uri) as backup:
+            pedidos = {"listar_partidas": lambda: backup.listar_partidas(),
+                       "ver": lambda: backup.ver(_id()),
+                       "crear_partida": lambda: backup.crear_partida("ana", _id())}
+            for nombre, pedir in pedidos.items():
+                try:
+                    pedir()
+                except NoPrimario as error:
+                    assert error.primario == 3, f"{nombre}: dijo que manda {error.primario}"
+                else:
+                    assert False, f"un backup no puede atender {nombre}"
+            assert backup.quien_es_primario()["primario"] == 3, \
+                "quien_es_primario lo contesta cualquiera"
+    finally:
+        daemon.shutdown()
 
 
 def test_crear_y_unirse():
@@ -88,8 +106,7 @@ def test_no_entran_tres_jugadores():
 # --- lo que NO tiene que viajar ---
 
 def test_el_cliente_nunca_recibe_las_cartas_del_rival():
-    """Es el motivo por el que el objeto expuesto no es la Partida: la
-    Partida conoce las dos manos, la vista filtra."""
+    """La Partida conoce las dos manos; la vista filtra."""
     j1, id_sesion1, j2, id_sesion2 = _mesa_lista()
     vista1, vista2 = j1.ver(id_sesion1), j2.ver(id_sesion2)
 
@@ -143,13 +160,9 @@ def test_jugar_una_carta_la_saca_de_la_mano_y_pasa_el_turno():
     assert despues["sello"] > 0, "la operacion va estampada con el reloj logico"
 
 
-# --- idempotencia: la respuesta al requisito 1 ---
+# --- idempotencia ---
 
 def test_reintentar_con_el_mismo_id_no_juega_la_carta_dos_veces():
-    """Si el cliente no recibio la respuesta (o se cayo el primario justo
-    ahi), reintenta con el mismo id_operacion y no se duplica la jugada.
-    La vista del reintento se arma de nuevo; como nadie jugo en el medio,
-    es igual a la primera."""
     j1, id_sesion1, j2, id_sesion2 = _mesa_lista()
     activo, id_sesion = (j1, id_sesion1) if j1.ver(id_sesion1)["es_mi_turno"] else (j2, id_sesion2)
 
@@ -253,8 +266,7 @@ def _jugar_partida_entera(j1, id_sesion1, j2, id_sesion2, azar):
 
 
 def test_una_partida_completa_por_pyro():
-    """El camino normal de punta a punta: dos clientes, una partida a 30,
-    hablando con el servidor por Pyro5."""
+    """Dos clientes, una partida a 30, de punta a punta."""
     j1, id_sesion1, j2, id_sesion2 = _mesa_lista()
     final1, final2 = _jugar_partida_entera(j1, id_sesion1, j2, id_sesion2, random.Random(4))
     assert final1["estado"] == final2["estado"] == "terminada"
@@ -263,11 +275,10 @@ def test_una_partida_completa_por_pyro():
     assert max(final1["puntos"].values()) == 30
 
 
-# --- lo que el cliente puede cantar lo decide el motor, no la interfaz ---
+# --- los cantos posibles los decide el motor ---
 
 def test_el_jugador_2_puede_cantar_envido_despues_de_que_el_mano_tiro():
-    """Con una carta sobre la mesa la primera ronda NO cerro, asi que el
-    envido sigue vivo para los dos. La interfaz lo daba por terminado."""
+    """Con una carta sobre la mesa la primera ronda no cerro: el envido sigue."""
     j1, id_sesion1, j2, id_sesion2 = _mesa_lista()
     mano, id_mano, pie, id_pie = (
         (j1, id_sesion1, j2, id_sesion2) if j1.ver(id_sesion1)["es_mi_turno"] else (j2, id_sesion2, j1, id_sesion1))
@@ -323,8 +334,7 @@ def test_los_cantos_posibles_son_los_que_el_motor_acepta():
 # --- la vista tiene siempre la misma forma ---
 
 def test_la_vista_tiene_las_mismas_claves_esperando_rival_que_jugando():
-    """Si la forma cambiara segun el estado, el cliente reventaria con un
-    KeyError al leer un campo que en ese momento no viene."""
+    """Si la forma cambiara segun el estado, el cliente fallaria con KeyError."""
     solo = _servidor()
     creada = solo.crear_partida("sola", _id())
     esperando = solo.ver(creada["id_sesion"])
@@ -339,8 +349,7 @@ def test_la_vista_tiene_las_mismas_claves_esperando_rival_que_jugando():
 
 
 def test_se_puede_esperar_al_rival_sin_que_explote():
-    """El bucle del cliente lee es_mi_turno en cada refresco mientras
-    espera, incluso antes de que la partida exista."""
+    """El cliente lee es_mi_turno aunque la partida todavia no exista."""
     solo = _servidor()
     creada = solo.crear_partida("sola", _id())
     vista = solo.ver(creada["id_sesion"])
@@ -374,8 +383,7 @@ def test_la_vista_de_una_partida_terminada_sigue_teniendo_la_misma_forma():
 # --- a cuanto se juega ---
 
 def test_las_mesas_se_juegan_a_los_puntos_del_servidor():
-    """Los puntos se fijan al crear la mesa, igual que la semilla. Se prueba
-    sin Pyro, llamando al objeto directo: aca no importa la red."""
+    """Los puntos se fijan al crear la mesa."""
     servidor = ServidorTruco(id_nodo=1, puntos=15)
     creada = servidor.crear_partida("ana", _id())
     assert servidor.ver(creada["id_sesion"])["puntos_para_ganar"] == 15, "se ve desde antes de arrancar"
@@ -383,14 +391,11 @@ def test_las_mesas_se_juegan_a_los_puntos_del_servidor():
     assert servidor.estado.mesas[creada["id_partida"]].partida.puntos_para_ganar == 15
 
 
-# --- ops replicables: reintentos de entrar, y el reloj del que pide ---
-# Sin Pyro, llamando al objeto directo: asi el reloj del daemon compartido
-# no salta a 1000 para los demas tests.
+# --- reintentos de entrar y reloj del que pide ---
+# Sin Pyro, asi el reloj del daemon compartido no salta a 1000.
 
 def test_reintentar_crear_partida_no_crea_otra_mesa():
-    """El id_sesion lo inventa el cliente: si reintenta (no le llego la
-    respuesta, o se cayo el primario), el servidor reconoce la sesion y
-    devuelve la mesa que ya habia creado."""
+    """El id_sesion lo inventa el cliente: reintentar devuelve la misma mesa."""
     servidor = ServidorTruco(id_nodo=1, puntos=15)
     id_sesion = _id()
     primera = servidor.crear_partida("ana", id_sesion)
@@ -400,10 +405,8 @@ def test_reintentar_crear_partida_no_crea_otra_mesa():
 
 
 def test_el_reintento_devuelve_la_vista_de_ahora():
-    """El servidor no guarda la respuesta de cada jugada (un backup no la
-    tendria): en un reintento arma la vista de nuevo. Si el rival jugo en el
-    medio, el reintento ya lo muestra; el sello sigue siendo el de la primera
-    vez, porque la operacion es la misma."""
+    """El reintento arma la vista de nuevo (si el rival jugo, ya se ve), con
+    el sello de la primera vez."""
     servidor = ServidorTruco(id_nodo=1, puntos=15)
     creada = servidor.crear_partida("ana", _id())
     unida = servidor.unirse(creada["id_partida"], "beto", _id())
@@ -422,9 +425,7 @@ def test_el_reintento_devuelve_la_vista_de_ahora():
 
 
 def test_el_nodo_se_adelanta_al_reloj_del_pedido():
-    """Lamport de verdad: el pedido llega estampado y el nodo hace
-    max(el suyo, el del pedido) + 1 antes de estampar la op. Sin esto el
-    reloj seria un contador que no sabe nada de los demas."""
+    """El nodo hace max(suyo, del pedido) + 1 antes de estampar la op."""
     servidor = ServidorTruco(id_nodo=1, puntos=15)
     creada = servidor.crear_partida("ana", _id(), 1000)
     assert servidor.estado.log[-1]["lamport"] > 1000, "la op quedo despues del pedido"
@@ -453,10 +454,8 @@ def _en_hilos(*tareas):
 
 
 def test_crear_y_listar_mesas_desde_varios_hilos_a_la_vez():
-    """Pyro5 atiende cada pedido en su hilo. Sin el lock del servidor,
-    listar_partidas() puede estar recorriendo las mesas justo cuando otro
-    hilo agrega una, y explota con "dictionary changed size during
-    iteration"."""
+    """Sin el lock, listar mientras otro hilo crea explota con "dictionary
+    changed size during iteration"."""
     creadas = []
 
     def crear():
@@ -475,8 +474,7 @@ def test_crear_y_listar_mesas_desde_varios_hilos_a_la_vez():
 
 
 def test_dos_partidas_en_paralelo_desde_dos_hilos():
-    """Varias partidas a la vez: cada hilo juega su mesa entera con sus
-    propios proxies, al mismo tiempo, y ninguna le pisa el estado a la otra."""
+    """Dos mesas jugadas a la vez desde dos hilos no se pisan."""
     finales = {}
 
     def jugar(clave, semilla):

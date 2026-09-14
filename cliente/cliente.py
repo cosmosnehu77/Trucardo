@@ -1,56 +1,24 @@
-# cliente/cliente.py
-#
-# Cliente de consola. Le habla al primario y muestra SOLO lo que el servidor le
-# manda: nunca ve las cartas del rival, porque no las recibe.
+# Cliente de consola.
 #
 #   python3 -m cliente.cliente [nombre]
 #
-# A que nodos puede hablarles sale de TRUCARDO_NODOS (nodo/config.py), la
-# misma variable que usan los nodos. Al arrancar le pregunta al primero de la
-# lista quien es el primario, y le habla a ese.
-#
-# La interfaz no conoce NINGUNA regla del truco. Que se puede cantar lo decide
-# el motor y viaja en vista["cantos_posibles"]; aca solo se arma el menu. Asi no
-# puede volver a pasar lo que pasaba antes: que el cliente dejara de ofrecer el
-# envido en una situacion en la que el motor si lo permitia.
-#
-# Cada operacion que cambia el estado lleva un id_operacion propio (un uuid).
-# Si hay que reintentar (no llego la respuesta, o se cayo el primario en el
-# medio), se reintenta CON EL MISMO ID y el servidor no la aplica dos veces.
-# Para entrar a una mesa pasa lo mismo con el id_sesion: lo inventa el
-# cliente, asi que reintentar crear_partida no crea otra mesa.
-# Todavia no reintenta solo: por ahora muestra el error y el jugador vuelve a
-# elegir.
-#
-# El cliente tiene su propio reloj de Lamport (requisito 5): cada pedido sale
-# estampado, y con cada respuesta se pone por delante del reloj del nodo. Todo
-# eso pasa en _llamar(), por donde sale toda llamada al servidor.
-#
-# El dibujo esta todo en cliente/pantalla.py.
+# Muestra solo lo que manda el servidor: ni una regla del truco vive aca (el
+# menu sale de vista["cantos_posibles"]). Toda llamada pasa por la Conexion,
+# que encuentra al primario y reintenta si se cae.
 
 import sys
 import time
 import uuid
 from typing import NamedTuple
 
-import Pyro5.api
-import Pyro5.errors
 from rich.console import Console
 
 from cliente import pantalla
+from cliente.conexion import Conexion, SinServicio
 from nodo import config
 from nodo.lamport import Reloj
 
-NOMBRE_OBJETO = "truco"
-
-# El nodo escucha en 0.0.0.0, o sea solo por IPv4. En las maquinas donde
-# "localhost" resuelve primero a ::1 (IPv6), Pyro5 intentaba conectarse por
-# ahi y la conexion rebotaba. Con esto Pyro5 resuelve los nombres a IPv4.
-Pyro5.config.PREFER_IP_VERSION = 4
-
-# Tecla de cada canto. Los tres del truco comparten la T porque nunca se
-# ofrecen dos al mismo tiempo: o se puede cantar truco, o subirlo a retruco, o
-# a vale cuatro.
+# Los tres del truco comparten la T: nunca se ofrecen dos a la vez.
 TECLAS = {
     "envido": "e", "real_envido": "r", "falta_envido": "f",
     "truco": "t", "retruco": "t", "vale_cuatro": "t",
@@ -58,8 +26,7 @@ TECLAS = {
 
 
 class Accion(NamedTuple):
-    """Una opcion del menu: con que tecla se elige, como se muestra, y que
-    hay que mandarle al servidor."""
+    """Una opcion del menu."""
 
     tecla: str
     texto: str
@@ -68,22 +35,22 @@ class Accion(NamedTuple):
 
 
 class Cliente:
-    def __init__(self, host, puerto):
+    def __init__(self, nodos):
         self.consola = Console()
-        self.reloj = Reloj()            # el reloj de Lamport de este cliente
+        self.reloj = Reloj()
         self.id_sesion = None
-        self.conectar(host, puerto)
-
-    def conectar(self, host, puerto):
-        """Apunta el cliente a otro nodo. El reloj y la sesion no cambian:
-        siguen siendo del mismo jugador."""
-        self.servidor = Pyro5.api.Proxy(f"PYRO:{NOMBRE_OBJETO}@{host}:{puerto}")
+        self.conexion = Conexion(nodos, self.reloj, al_reintentar=self._avisar)
+        # el spinner abierto: el de _esperar (con su texto) o uno propio de _avisar
+        self._spinner = None
+        self._texto_spinner = None
+        self._spinner_propio = False
 
     # ---------- entrar ----------
 
     def entrar(self, nombre):
         """Elige una mesa que espera rival, o crea una nueva."""
         libres = self._llamar("listar_partidas")
+        self.consola.print(pantalla.conectado(self.conexion.primario))
         elegida = ""
         if libres:
             self.consola.print(pantalla.mesas_libres(libres))
@@ -92,9 +59,7 @@ class Cliente:
         else:
             self.consola.print("[dim]No hay mesas esperando. Creo una nueva.[/]")
 
-        # El id_sesion lo inventa el cliente, no el servidor: si hubiera que
-        # reintentar va el mismo, y el servidor no crea otra mesa ni sienta a
-        # nadie dos veces.
+        # lo inventa el cliente: si hay que reintentar, va el mismo
         id_sesion = uuid.uuid4().hex
         datos = (self._llamar("unirse", elegida, nombre, id_sesion) if elegida
                  else self._llamar("crear_partida", nombre, id_sesion))
@@ -104,10 +69,9 @@ class Cliente:
     # ---------- que puede hacer ----------
 
     def acciones(self, vista):
-        """El menu, armado con lo que dice el servidor y no con reglas de aca."""
+        """El menu, armado con lo que dice el servidor."""
         if vista["canto_pendiente"] and vista["canto_pendiente"]["quien"] == "rival":
-            # Irse al mazo tambien es una forma de contestar: el motor lo
-            # cuenta como NO QUIERO a ese canto (NOTAS.md).
+            # irse al mazo tambien contesta: vale como no quiero
             return [Accion("q", "QUIERO", "responder", True),
                     Accion("n", "NO QUIERO", "responder", False),
                     Accion("m", "irme al mazo", "mazo", None)]
@@ -123,7 +87,6 @@ class Cliente:
         return acciones
 
     def pedir_y_enviar(self, vista):
-        """Muestra el menu, lee una tecla y manda la operacion."""
         acciones = self.acciones(vista)
         self.consola.print(pantalla.menu(acciones))
 
@@ -139,34 +102,21 @@ class Cliente:
     # ---------- hablar con el servidor ----------
 
     def _llamar(self, metodo, *args):
-        """Toda llamada al servidor pasa por aca, asi ninguna sale sin estampar.
-
-        Antes de mandar, el reloj suma uno (mandar es un evento) y el sello va
-        como ultimo argumento. Cuando vuelve la respuesta, el cliente se pone
-        por delante del reloj del nodo: lo que haga despues queda ordenado
-        despues de lo que ya vio.
-
-        Cuando haya varios nodos, aca adentro va a ir el reintento con otro
-        nodo. Como todo pasa por aca, el resto del cliente no se entera.
-        """
-        respuesta = getattr(self.servidor, metodo)(*args, self.reloj.tic())
-        if isinstance(respuesta, dict) and "reloj" in respuesta:
-            self.reloj.recibir(respuesta["reloj"])
-        return respuesta
+        """Toda llamada al servidor pasa por aca. Si no atiende nadie, cierra
+        el spinner y deja subir SinServicio."""
+        try:
+            return self.conexion.llamar(metodo, *args)
+        except SinServicio:
+            self._cerrar_spinner()
+            raise
 
     def _id_operacion(self):
-        """Un id nuevo por cada cosa que el jugador decide hacer.
-
-        Es un uuid y no un contador: un contador vuelve a 1 cada vez que se
-        abre el cliente, y si alguien retoma su sesion, su primera jugada
-        nueva podria llevar el mismo id que la ultima que el servidor tiene
-        guardada. El servidor la tomaria por un reintento y no la aplicaria.
-        """
+        """Un uuid por cada cosa que decide el jugador: un contador se
+        repetiria al volver a abrir el cliente."""
         return uuid.uuid4().hex
 
     def _enviar(self, que, dato):
-        """El id_operacion se calcula UNA vez: si hay que reintentar va el
-        mismo, y el servidor no duplica la jugada."""
+        """El id_operacion se calcula una vez: un reintento lleva el mismo."""
         id_operacion = self._id_operacion()
         try:
             if que == "jugar":
@@ -177,13 +127,35 @@ class Cliente:
                 return self._llamar("responder", self.id_sesion, dato, id_operacion)
             return self._llamar("irse_al_mazo", self.id_sesion, id_operacion)
         except ValueError as error:
-            # Pyro5 re-lanza la excepcion original: el mensaje del motor
-            # ("no es el turno del jugador 1") llega intacto.
+            # la jugada ilegal: Pyro5 trae el mensaje del motor intacto
             self.consola.print(f"[bold red]✗[/] {error}")
-        except Pyro5.errors.PyroError as error:
-            self.consola.print(f"[bold red]✗ no pude hablar con el servidor:[/] {error}")
         time.sleep(1.5)
         return None
+
+    # ---------- el spinner del failover ----------
+
+    def _avisar(self, segundos):
+        """Lo llama la Conexion mientras busca al primario (con los segundos)
+        y cuando lo encuentra (con None). Un solo spinner a la vez."""
+        if segundos is None:
+            self._cerrar_spinner()
+            self.consola.print(pantalla.reconectado(self.conexion.primario))
+            return
+        texto = pantalla.buscando_primario(segundos)
+        if self._spinner is None:
+            self._spinner = self.consola.status(texto, spinner="dots")
+            self._spinner.start()
+            self._spinner_propio = True
+        else:
+            self._spinner.update(texto)
+
+    def _cerrar_spinner(self):
+        """Cierra el spinner propio, o le devuelve su texto al de _esperar."""
+        if self._spinner_propio:
+            self._spinner.stop()
+            self._spinner, self._spinner_propio = None, False
+        elif self._spinner is not None:
+            self._spinner.update(self._texto_spinner)
 
     # ---------- bucle ----------
 
@@ -202,44 +174,39 @@ class Cliente:
                 self._esperar(vista["estado"] == "esperando_rival")
 
     def _esperar(self, falta_rival):
-        """Refresca solo, sin que el jugador tenga que apretar Enter."""
+        """Refresca solo hasta que me toque."""
         aviso = "esperando que se sume el rival..." if falta_rival else "le toca al rival..."
-        with self.consola.status(f"[dim]{aviso}[/]", spinner="dots"):
-            while True:
-                time.sleep(1)
-                vista = self._llamar("ver", self.id_sesion)
-                if vista["es_mi_turno"] or vista["estado"] == "terminada":
-                    return
+        texto = f"[dim]{aviso}[/]"
+        with self.consola.status(texto, spinner="dots") as spinner:
+            self._spinner, self._texto_spinner = spinner, texto
+            try:
+                while True:
+                    time.sleep(1)
+                    vista = self._llamar("ver", self.id_sesion)
+                    if vista["es_mi_turno"] or vista["estado"] == "terminada":
+                        return
+            finally:
+                self._spinner = self._texto_spinner = None
 
 
 def main():
     nombre = (sys.argv[1] if len(sys.argv) > 1
               else input("Tu nombre: ").strip()) or f"jugador-{uuid.uuid4().hex[:4]}"
 
-    # Por ahora le pregunta al primer nodo de TRUCARDO_NODOS quien es el
-    # primario, y se conecta a ese. Probar con otro nodo si el primero no
-    # contesta, y cambiarse solo si el primario se cae, viene despues.
     try:
         nodos = config.nodos()
     except ValueError as error:
         sys.exit(f"TRUCARDO_NODOS invalido: {error}")
-    nodo = nodos[min(nodos)]
 
-    cliente = Cliente(nodo.host, nodo.puerto_pyro)
-    primario = cliente._llamar("quien_es_primario")["primario"]
-    if primario is None:
-        sys.exit(f"el nodo {nodo.id_nodo} no sabe quien es el primario: proba en unos segundos")
-    if primario not in nodos:
-        sys.exit(f"el nodo {nodo.id_nodo} dice que el primario es el {primario}, "
-                 f"que no esta en TRUCARDO_NODOS")
-    if primario != nodo.id_nodo:
-        cliente.conectar(nodos[primario].host, nodos[primario].puerto_pyro)
-    cliente.consola.print(f"[green]✓[/] conectado al primario, el nodo [bold]{primario}[/]")
-    cliente.entrar(nombre)
+    cliente = Cliente(nodos)
     try:
+        cliente.entrar(nombre)
         cliente.jugar()
     except KeyboardInterrupt:
         cliente.consola.print("\n[dim]chau.[/]")
+    except SinServicio as error:
+        cliente.consola.print(pantalla.sin_servicio(error))
+        sys.exit(1)
 
 
 if __name__ == "__main__":

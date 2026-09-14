@@ -1,10 +1,4 @@
-# cliente/pantalla.py
-#
-# Todo el dibujo del cliente. Lo unico que sabe hacer es leer el dict de la
-# vista que manda el servidor: ni una regla del truco vive aca.
-#
-# Esta separado de cliente.py para que ahi se lea el protocolo (pedir, enviar,
-# reintentar) sin cien lineas de colores en el medio.
+# El dibujo del cliente, armado con la vista que manda el servidor.
 
 from rich.align import Align
 from rich.columns import Columns
@@ -13,7 +7,6 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-# simbolo y color de cada palo, para que las cartas se distingan de un vistazo
 PALOS = {
     "espada": ("⚔", "bright_blue"),
     "basto": ("♣", "green"),
@@ -21,14 +14,13 @@ PALOS = {
     "copa": ("♥", "red"),
 }
 
-YO = "cyan"         # mis cosas siempre de este color
-RIVAL = "magenta"   # y las del rival de este
+YO = "cyan"
+RIVAL = "magenta"
 
-ANCHO = 9           # lo que mide una carta dibujada, en caracteres
+ANCHO = 9           # lo que mide una carta dibujada
 
 
 def dibujar(consola, vista):
-    """Redibuja la pantalla entera con lo ultimo que mando el servidor."""
     consola.clear()
 
     if vista["estado"] == "esperando_rival":
@@ -44,11 +36,7 @@ def dibujar(consola, vista):
 
 
 def carta(naipe, etiqueta=None):
-    """Una carta como un panelito. Si no hay carta, dibuja el hueco vacio.
-
-    `etiqueta` va arriba del borde: en la mano es la tecla para elegirla, en la
-    mesa es la estrella del que gano la ronda.
-    """
+    """Una carta, o el hueco vacio si no hay. La etiqueta va sobre el borde."""
     if naipe is None:
         return Panel(Text("\n·\n", justify="center"), width=ANCHO,
                      border_style="grey37", padding=(0, 1))
@@ -66,7 +54,6 @@ def carta(naipe, etiqueta=None):
 
 
 def marcador(vista):
-    """El puntaje, a cuanto se juega, de que mano vamos y el reloj logico."""
     puntos = vista["puntos"]
     texto = Text(justify="center")
     texto.append(f"{vista['yo']} ", style=f"bold {YO}")
@@ -84,17 +71,12 @@ def marcador(vista):
 
 
 def mesa(vista):
-    """Las cartas tiradas, enfrentadas: arriba las del rival, abajo las tuyas,
-    y en el medio quien gano cada ronda.
-
-    Las columnas son las rondas, asi se ve de un vistazo como viene la mano:
-    quien gano la primera, si hubo parda, y cual se esta jugando ahora.
-    """
+    """Las cartas tiradas, una columna por ronda: arriba las del rival, abajo
+    las tuyas y en el medio quien gano."""
     rondas = vista["rondas"]
 
-    # Las columnas van sin justify: el justify de una columna de rich vuelve a
-    # acomodar cada linea de la carta y le arruina el numero de la esquina. Lo
-    # que hay que centrar se centra a mano, sobre el ancho de una carta.
+    # Sin justify en las columnas: rich reacomoda cada linea de la carta y
+    # rompe el numero de la esquina. Lo que hay que centrar se centra a mano.
     tabla = Table(show_header=True, header_style="dim", box=None, padding=(0, 1))
     tabla.add_column("", vertical="middle")
     for numero in range(1, len(rondas) + 1):
@@ -114,12 +96,10 @@ def mesa(vista):
 
 
 def _estrella(ronda, quien):
-    """La estrellita de la carta que gano la ronda."""
     return "★" if ronda["gano"] == quien else None
 
 
 def _quien_gano(gano):
-    """El cartelito del medio. La flecha apunta al que se llevo la ronda."""
     if gano == "yo":
         cartel = Text("▼ tuya", style=f"bold {YO}")
     elif gano == "rival":
@@ -132,7 +112,6 @@ def _quien_gano(gano):
 
 
 def mis_cartas(vista):
-    """Las cartas que te quedan, numeradas con la tecla que las tira."""
     cartas = [carta(naipe, etiqueta=str(i))
               for i, naipe in enumerate(vista["mis_cartas"], 1)]
     huecos = [carta(None) for _ in range(3 - len(cartas))]
@@ -143,7 +122,6 @@ def mis_cartas(vista):
 
 
 def apuestas(vista):
-    """Lo que se esta jugando y el canto que espera respuesta."""
     lineas = []
     if vista["apuesta_truco"]:
         lineas.append(Text(f"apuesta en juego: {vista['apuesta_truco'].upper()}",
@@ -156,7 +134,6 @@ def apuestas(vista):
 
 
 def menu(acciones):
-    """La botonera de abajo: una tecla por cada cosa que se puede hacer."""
     texto = Text()
     for accion in acciones:
         texto.append(f" [{accion.tecla}] ", style="bold white on blue")
@@ -165,7 +142,6 @@ def menu(acciones):
 
 
 def mesas_libres(libres):
-    """La tabla del lobby: las mesas que estan esperando rival."""
     tabla = Table(title="Mesas esperando rival", title_style="bold")
     tabla.add_column("id", style=YO)
     tabla.add_column("creada por")
@@ -175,8 +151,6 @@ def mesas_libres(libres):
 
 
 def bienvenida(id_partida, creada):
-    """El cartel de "ya estas sentado". Si la mesa la creaste vos, hay que
-    pasarle el id al otro jugador."""
     texto = f"Estas en la mesa [bold {YO}]{id_partida}[/]"
     if creada:
         texto += "\nPasale ese id al otro jugador."
@@ -184,10 +158,29 @@ def bienvenida(id_partida, creada):
 
 
 def final(vista):
-    """El cartel de cierre."""
     gane = vista["ganador"] == "yo"
     return Panel(
         Text(f"{'GANASTE' if gane else 'perdiste'}  "
              f"{vista['puntos']['yo']} - {vista['puntos']['rival']}",
              justify="center", style="bold"),
         border_style="green" if gane else "red")
+
+
+# ---------- el failover ----------
+
+
+def conectado(id_nodo):
+    return f"[green]✓[/] conectado al primario, el nodo [bold]{id_nodo}[/]"
+
+
+def buscando_primario(segundos):
+    return f"[yellow]se perdio el primario, buscando al nuevo... ({segundos:.0f} s)[/]"
+
+
+def reconectado(id_nodo):
+    return f"[green]✓[/] reconectado: ahora el primario es el nodo [bold]{id_nodo}[/]"
+
+
+def sin_servicio(error):
+    return Panel(f"No hay ningun nodo que pueda atender ({error}).\n"
+                 f"Proba de nuevo en un rato.", border_style="red")

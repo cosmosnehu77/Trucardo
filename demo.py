@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Juega una partida entera con dos bots, para ver el motor funcionando.
+"""Dos bots juegan con el motor solo, sin red.
 
     python3 demo.py            una partida narrada
     python3 demo.py 500        500 partidas mudas, para buscar reglas rotas
-
-No usa red: es el motor solo. Sirve para verificar que la Partida cierra bien
-antes de ponerle Pyro5 encima.
 """
 
 import random
@@ -17,7 +14,7 @@ NOMBRE = {1: "J1", 2: "J2"}
 
 
 def turno_del_bot(partida, azar):
-    """Hace una jugada legal cualquiera. Devuelve como se describe."""
+    """Hace una jugada legal cualquiera y devuelve como se describe."""
     jugador = partida.turno
 
     if partida.apuesta.pendiente is not None:
@@ -26,8 +23,6 @@ def turno_del_bot(partida, azar):
         partida.responder(jugador, quiere)
         return f"{NOMBRE[jugador]} dice {'QUIERO' if quiere else 'NO QUIERO'} al {canto}"
 
-    # Que puede cantar lo decide el motor, igual que para el cliente de red: el
-    # bot no repite ni una regla del truco.
     posibles = [canto for canto in Canto if partida.puede_cantar(jugador, canto)]
     if posibles and azar.random() < 0.25:
         canto = azar.choice(posibles)

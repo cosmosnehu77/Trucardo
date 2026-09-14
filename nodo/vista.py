@@ -1,38 +1,18 @@
-# nodo/vista.py
-#
-# La vista es lo que UN jugador puede ver: el puntaje, sus cartas, las cartas
-# ya tiradas sobre la mesa, y del rival nada mas que lo publico. Es lo unico
-# que el servidor le manda al cliente.
-#
-# Esta en su propio archivo y no dentro del servidor por dos razones: no tiene
-# nada que ver con Pyro5 (es armar un dict a partir de una Partida), y asi se
-# puede probar sin levantar un daemon.
-#
-# Todo lo que sale de aca es dato plano (dict, list, str, int, bool) para que
-# el cliente reciba siempre lo mismo y no dependa de que serpent reconstruya
-# nuestras clases del otro lado.
+# Lo que ve UN jugador: sus cartas, la mesa y del rival solo lo publico. Todo
+# dato plano, para que viaje igual por Pyro5.
 
 from juego import EMPATE, Canto, rival
 
 
 def armar_vista(mesa, sesion, reloj):
-    """El dict que ve ESTE jugador. Nunca las cartas del rival.
-
-    La vista tiene SIEMPRE las mismas claves, en cualquier estado. Si la forma
-    cambiara segun el estado, el cliente tendria que preguntar antes de leer
-    cada campo, y basta olvidarse una vez para que explote con un KeyError
-    (paso justo con es_mi_turno mientras la mesa esperaba rival). Aca abajo
-    estan los valores de arranque; lo que depende de la partida se completa
-    despues.
-    """
+    """El dict que ve este jugador. Tiene siempre las mismas claves, en
+    cualquier estado, asi el cliente no tiene que preguntar antes de leer."""
     yo = sesion.jugador
     vista = {
         "id_partida": mesa.id,
         "yo": sesion.nombre,
         "rival": mesa.nombres.get(rival(yo)),
         "reloj": reloj.valor,
-        # a cuanto se juega: se sabe desde que se crea la mesa, antes de que
-        # exista la partida
         "puntos_para_ganar": mesa.puntos,
         "estado": "esperando_rival",
         "numero_mano": 0,
@@ -64,9 +44,7 @@ def armar_vista(mesa, sesion, reloj):
         "rondas": _rondas(partida.mano, yo),
         "apuesta_truco": _texto(partida.apuesta.truco),
         "es_mi_turno": not partida.terminada and partida.turno == yo,
-        # Lo que este jugador puede cantar AHORA lo decide el motor. El cliente
-        # solo lo muestra: la interfaz no repite ni una regla del truco, y por
-        # lo tanto no se puede desincronizar.
+        # lo decide el motor: el cliente solo lo muestra
         "cantos_posibles": [c.value for c in Canto if partida.puede_cantar(yo, c)],
         "canto_pendiente": _canto_pendiente(partida.apuesta.pendiente, yo),
         "ganador": _quien(partida.ganador, yo),
@@ -75,16 +53,8 @@ def armar_vista(mesa, sesion, reloj):
 
 
 def _rondas(mano, yo):
-    """Las rondas de la mano en curso, con las dos cartas enfrentadas.
-
-    Las cartas ya tiradas SI son publicas: una carta sobre la mesa la ve todo
-    el mundo. Cada ronda sale asi:
-
-        {"yo": [7, "oro"], "rival": [3, "copa"], "gano": "yo"}
-
-    La ronda a medio jugar tambien viene, con None en la carta que falta y
-    "gano" en None. Asi el cliente puede dibujar la mesa tal como esta.
-    """
+    """Las rondas de la mano con las cartas enfrentadas (las tiradas son
+    publicas). La ronda a medio jugar viene con None en la carta que falta."""
     rondas = []
 
     for ronda in mano.rondas:
@@ -107,7 +77,6 @@ def _rondas(mano, yo):
 
 
 def _canto_pendiente(pendiente, yo):
-    """El canto esperando respuesta: quien lo canto y cual es."""
     if pendiente is None:
         return None
     cantor, canto = pendiente
@@ -115,13 +84,11 @@ def _canto_pendiente(pendiente, yo):
 
 
 def _texto(canto):
-    """El canto como texto ("vale cuatro"), o None si no hay canto."""
     return None if canto is None else str(canto)
 
 
 def _quien(jugador, yo):
-    """Traduce el 1/2 del motor a "yo" / "rival", asi el cliente no necesita
-    saber si le toco ser el jugador 1 o el 2. None si todavia no se decidio."""
+    """El 1/2 del motor como "yo" o "rival"."""
     if jugador is None or jugador == EMPATE:
         return None
     return "yo" if jugador == yo else "rival"

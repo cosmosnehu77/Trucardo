@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Corre los tests sin depender de pytest.
+"""Corre los tests sin pytest:
 
     python3 run_tests.py
 
-Los tests estan escritos en estilo pytest (funciones test_* con assert
-pelado), asi que cuando instalen pytest funcionan igual sin tocar nada:
-
-    pip install pytest && pytest
+Con pytest instalado, `pytest` corre los mismos.
 """
 
 import importlib

@@ -1,28 +1,10 @@
-# nodo/lamport.py
-#
-# Reloj logico de Lamport (requisito 5 del enunciado).
-#
-# La hora de cada maquina no sirve para ordenar eventos entre nodos:
-# dos relojes de pared nunca estan exactamente iguales, y pueden ir para
-# atras (NTP los corrige, el usuario los cambia). Con eso, dos operaciones
-# pueden quedar con la misma hora, o al reves de como pasaron de verdad.
-#
-# El reloj de Lamport no dice QUE HORA es, dice QUE PASO ANTES. Es un
-# contador que solo sube, y al recibir un mensaje se adelanta al del que
-# lo mando. Alcanza para que todos los nodos apliquen las operaciones en
-# el mismo orden, que es lo unico que necesitamos.
-#
-# Como se usa en Trucardo: el cliente estampa cada pedido con tic(), y el
-# nodo, apenas lo recibe, hace recibir() con ese sello. Cada op que entra al
-# log se estampa con tic(), y el cliente hace recibir() con el reloj que viene
-# en cada respuesta.
+# Reloj logico de Lamport: no dice que hora es, sino que paso antes. Cada
+# nodo y cada cliente tienen el suyo.
 
 import threading
 
 
 class Reloj:
-    """Un contador que solo sube. Cada nodo y cada cliente tienen el suyo."""
-
     def __init__(self):
         self._valor = 0
         self._lock = threading.Lock()
@@ -33,17 +15,13 @@ class Reloj:
             return self._valor
 
     def tic(self):
-        """Pasa algo local (un cliente pide una jugada): sumo uno."""
+        """Un evento propio, como mandar un mensaje."""
         with self._lock:
             self._valor += 1
             return self._valor
 
     def recibir(self, ajeno):
-        """Llega un mensaje estampado con `ajeno`: me pongo por delante.
-
-        max(el mio, el de el) + 1. Asi, si A le mando algo a B, el sello
-        de B siempre es mayor que el de A: se ve que A paso antes.
-        """
+        """Llega un mensaje con el sello `ajeno`: max(mio, ajeno) + 1."""
         with self._lock:
             self._valor = max(self._valor, int(ajeno)) + 1
             return self._valor

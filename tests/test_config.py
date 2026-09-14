@@ -1,8 +1,5 @@
-"""La configuracion por entorno: donde esta cada nodo y a cuanto se juega.
-
-Las funciones de nodo/config.py aceptan el texto directo, asi que casi todo
-se prueba sin tocar el entorno. Lo que si lo lee va con _entorno(), que deja
-las variables como estaban."""
+"""La configuracion por entorno. Lo que lee el entorno va con _entorno(),
+que deja las variables como estaban."""
 
 import os
 from contextlib import contextmanager
@@ -48,7 +45,6 @@ def test_lee_los_tres_nodos_del_cluster():
 
 
 def test_sin_variable_hay_un_solo_nodo_en_el_9500():
-    """Asi el proyecto anda igual que antes sin configurar nada."""
     with _entorno(TRUCARDO_NODOS=None):
         assert config.nodos() == {1: Nodo(1, "localhost", 9500, 9600)}
 

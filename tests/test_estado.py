@@ -1,8 +1,5 @@
-"""El estado que se replica: las ops, el log y aplicar().
-
-Sin red y sin Pyro5. Aca se prueba lo que hace posible replicar mandando ops
-en vez de copiar el estado: que aplicar() es determinista, que una op ilegal
-no deja rastro, y que saber si una op ya se aplico sale del log."""
+"""El estado que se replica: aplicar() es determinista, una op ilegal no deja
+rastro, y saber si una op ya se aplico sale del log."""
 
 import json
 import random
@@ -13,8 +10,7 @@ from nodo.vista import armar_vista
 
 
 def _op(estado, tipo, id_sesion, datos):
-    """Arma una op como la arma el servidor y la aplica. Para entrar, el
-    id_operacion es la propia sesion; para jugar, uno nuevo por op."""
+    """Arma una op como el servidor y la aplica."""
     seq = estado.ultimo_seq + 1
     op = {"seq": seq, "epoca": 0, "lamport": seq, "tipo": tipo, "id_sesion": id_sesion,
           "id_operacion": id_sesion if tipo in ("crear", "unirse") else f"op-{seq}",
@@ -33,8 +29,7 @@ def _mesa(estado, id_mesa, semilla):
 
 
 def _vista(estado, id_sesion):
-    """La vista de ese jugador, con un reloj en cero para todos: asi dos
-    estados se comparan solo por lo que tienen adentro."""
+    """Con un reloj nuevo, para comparar estados solo por lo que tienen."""
     sesion = estado.sesion(id_sesion)
     return armar_vista(estado.mesa(sesion.id_mesa), sesion, Reloj())
 
@@ -59,12 +54,8 @@ def _jugada_al_azar(estado, jugadores, azar):
 
 
 def test_dos_estados_con_el_mismo_log_llegan_a_lo_mismo():
-    """Replicacion de maquina de estados: un backup que aplica las mismas
-    ops en el mismo orden llega al mismo estado, sin que nadie le copie las
-    cartas. Dos mesas intercaladas en un solo log, jugadas hasta el final.
-
-    El log pasa antes por JSON, que es como va a viajar entre nodos: tambien
-    prueba que las ops son datos planos."""
+    """Un backup que aplica el mismo log llega al mismo estado. Dos mesas
+    intercaladas, y el log pasa por JSON, como viaja entre nodos."""
     primario = EstadoServicio()
     mesas = [_mesa(primario, "aaaaaa", 11), _mesa(primario, "bbbbbb", 22)]
     azar = random.Random(7)
@@ -89,9 +80,7 @@ def test_dos_estados_con_el_mismo_log_llegan_a_lo_mismo():
 
 
 def test_una_jugada_ilegal_no_entra_al_log_ni_cambia_nada():
-    """Si una op pudiera fallar a mitad de camino, el primario quedaria
-    distinto de los backups, que nunca la reciben. Por eso: o se aplica
-    entera, o no se toca nada y no entra al log."""
+    """O se aplica entera, o no cambia nada ni entra al log."""
     estado = EstadoServicio()
     j1, j2 = _mesa(estado, "aaaaaa", 11)
     quieto = j2 if _vista(estado, j1)["es_mi_turno"] else j1
@@ -108,9 +97,8 @@ def test_una_jugada_ilegal_no_entra_al_log_ni_cambia_nada():
 
 
 def test_ya_aplicada_viaja_con_el_log():
-    """La respuesta al pedido en vuelo: el backup que recibio la op sabe que
-    ya se aplico. Si el cliente reintenta contra el despues de un failover,
-    la jugada no se juega dos veces."""
+    """El backup que recibio el log sabe que la op ya se aplico: un reintento
+    despues del failover no la duplica."""
     primario = EstadoServicio()
     j1, j2 = _mesa(primario, "aaaaaa", 11)
     activo = j1 if _vista(primario, j1)["es_mi_turno"] else j2

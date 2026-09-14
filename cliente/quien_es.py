@@ -1,16 +1,8 @@
-# cliente/quien_es.py
+# Muestra quien cree cada nodo que es el primario, preguntandole por Pyro5
+# como lo haria un cliente.
 #
-# Le pregunta a CADA nodo del cluster quien cree que es el primario, y
-# muestra lo que contesta cada uno en una tabla. Es la herramienta de la
-# demo: antes y despues de matar al primario se ve quien manda, en que
-# epoca, y que tan al dia esta cada nodo (ultimo_seq).
-#
-#   python3 -m cliente.quien_es             pregunta una vez
-#   python3 -m cliente.quien_es --seguir    pregunta cada segundo (Ctrl+C para salir)
-#
-# Es quien_es.py de la Actividad 9 adaptado a este proyecto. Pregunta por
-# Pyro5, como un cliente de verdad: lo que muestra la tabla es lo que veria
-# un jugador. A que nodos les pregunta sale de TRUCARDO_NODOS.
+#   python3 -m cliente.quien_es             una vez
+#   python3 -m cliente.quien_es --seguir    cada segundo (Ctrl+C para salir)
 
 import sys
 import time
@@ -21,10 +13,10 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
-from cliente.cliente import NOMBRE_OBJETO
+from cliente.conexion import NOMBRE_OBJETO
 from nodo import config
 
-# Igual que en cliente/cliente.py: el nodo escucha solo por IPv4.
+# el nodo escucha solo en IPv4
 Pyro5.config.PREFER_IP_VERSION = 4
 
 
@@ -39,7 +31,6 @@ def consultar(nodo):
 
 
 def tabla(cluster):
-    """Le pregunta a todos y arma la tabla."""
     salida = Table(title=f"quien es el primario · {time.strftime('%H:%M:%S')}")
     for columna in ("nodo", "direccion", "rol", "cree que el primario es",
                     "epoca", "ultimo_seq", "reloj"):
