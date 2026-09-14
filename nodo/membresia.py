@@ -62,7 +62,8 @@ class Membresia:
             "LATIDO": self._al_latido,
             "QUIEN": self._al_quien,
             "ELECCION": self._al_eleccion,
-            "COORDINADOR": self._al_coordinador}
+            "COORDINADOR": self._al_coordinador,
+            "REPLICA": self._a_las_replicas}
 
         self._detenido = threading.Event()
         self._escucha = None
@@ -107,6 +108,25 @@ class Membresia:
     def _direccion(self, id_nodo):
         nodo = self.cluster[id_nodo]
         return (nodo.host, nodo.puerto_cluster)
+
+    def replicar(self, operacion):
+        rtas = []
+
+        ultimo_seq = self.nodo.estado.ultimo_seq
+        pedido = self.mensaje("REPLICA", op=operacion, ultimo_seq=ultimo_seq)
+        respuestas = self._preguntar_a_todos(pedido)
+        cont = sum(1 for r in respuestas.values() if r.get("ok"))
+        return cont
+
+
+    def _a_las_replicas (self, mensaje):
+        op = mensaje.get("op")
+        
+        rta = self.nodo._atiendo_replica(op) if op else False
+
+        return {"ok": rta, "ultimo_seq": self.nodo.estado.ultimo_seq,
+                            "epoca": self.nodo.epoca}
+
 
     def _preguntar_a_todos(self, mensaje):
         """Le manda `mensaje` a todo el cluster y devuelve {id_nodo: respuesta}

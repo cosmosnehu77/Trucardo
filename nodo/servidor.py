@@ -67,7 +67,7 @@ class ServidorTruco:
         # dice, sale de la variable PUNTOS.
         self.puntos = config.puntos() if puntos is None else puntos
         self.reloj = Reloj()
-
+        self.__membresia = None
         # Todo acceso al estado va adentro de `with self.lock:`. Es
         # reentrante (RLock) para que un metodo que ya lo tiene pueda llamar
         # a otro que tambien lo toma: los metodos publicos lo toman y llaman
@@ -86,6 +86,9 @@ class ServidorTruco:
         # Las mesas, las sesiones y el log de ops: lo que se replica. Lo de
         # arriba (rol, epoca, reloj, lock) es de este nodo y no se replica.
         self.estado = EstadoServicio()
+
+    def _set_membresia (self, membresia):
+        self.__membresia = membresia
 
     # ---------- descubrimiento ----------
 
@@ -226,12 +229,32 @@ class ServidorTruco:
                   "lamport": self.reloj.tic(), "tipo": tipo, "id_sesion": id_sesion,
                   "id_operacion": id_operacion, "datos": datos}
             self.estado.aplicar(op)
-
+            if self.__membresia: 
+                num_confirmados = self.replicar_a_otros_nodos(op)
             sesion = self.estado.sesion(id_sesion)
             log.info(f"op {op['seq']} · {tipo} · {sesion.nombre} · mesa {sesion.id_mesa}")
             # Cuando esten los backups, la replicacion va justo aca: mandarles
             # la op y esperar que confirmen, antes de responderle al cliente.
             return op["lamport"]
+
+
+    def replicar_a_otros_nodos (self, operacion):
+
+        num_ok = self.__membresia.replicar(operacion)
+
+        return num_ok
+
+
+    def _atiendo_replica (self, operacion):
+        try:
+            self.estado.aplicar(operacion)
+            sesion = self.estado.sesion(operacion['id_sesion'])
+            log.info(f"op {operacion['seq']} · {operacion['tipo']} · {sesion.nombre} · mesa {sesion.id_mesa}")
+            
+            return True
+        except Exception as e:
+            log.info(f"Error al aplicar la replica en el backup {e}")
+            return False
 
     # ---------- respuestas ----------
 
@@ -265,6 +288,7 @@ def main():
     registro.configurar(servidor)
 
     membresia = Membresia(servidor, cluster)
+    servidor._set_membresia(membresia)
     try:
         membresia.arrancar()
     except OSError as error:
