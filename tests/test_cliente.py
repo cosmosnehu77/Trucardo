@@ -91,3 +91,12 @@ def test_cada_pedido_sale_estampado_y_el_cliente_se_adelanta():
     cliente._llamar("ver", "c0ffee")
     assert falso.llamadas == [("c0ffee", 1)], "el sello va ultimo"
     assert cliente.reloj.valor == 51, "max(1, 50) + 1"
+
+
+# --- los resultados que se muestran ---
+
+def test_solo_se_muestran_los_eventos_que_no_se_vieron():
+    cliente = _cliente()
+    cliente._visto = 1
+    vista = _vista(eventos=[{"n": 1}, {"n": 2}, {"n": 3}])
+    assert [evento["n"] for evento in cliente._nuevos(vista)] == [2, 3]

@@ -407,3 +407,66 @@ def test_el_servidor_puede_ver_las_cartas_de_cada_jugador_por_separado():
     """cartas_de() es lo que ve cada cliente: nunca las dos manos."""
     partida = Partida(semilla=11)
     assert set(partida.cartas_de(J1)).isdisjoint(partida.cartas_de(J2))
+
+
+# --- eventos: lo que se resolvio, para mostrarlo ---
+
+def test_el_envido_querido_anota_ganador_puntos_y_tantos():
+    j1 = [Carta(7, O), Carta(6, O), Carta(1, C)]      # 33
+    j2 = [Carta(10, E), Carta(11, C), Carta(12, B)]   # 0
+    partida = partida_armada(j1, j2)
+    partida.cantar(J1, Canto.ENVIDO)
+    partida.responder(J2, quiere=True)
+    assert partida.eventos == [{"n": 1, "tipo": "envido", "ganador": J1, "puntos": 2,
+                                "canto": Canto.ENVIDO, "querido": True,
+                                "tantos": {J1: 33, J2: 0}}]
+
+
+def test_el_envido_no_querido_se_anota_sin_tantos():
+    partida = partida_armada(*GANA_J1)
+    partida.cantar(J1, Canto.REAL_ENVIDO)
+    partida.responder(J2, quiere=False)
+    evento = partida.eventos[-1]
+    assert (evento["tipo"], evento["ganador"], evento["puntos"], evento["querido"]) == \
+        ("envido", J1, 1, False)
+    assert "tantos" not in evento
+
+
+def test_la_mano_se_anota_con_sus_rondas_antes_de_repartir():
+    partida = partida_armada(*GANA_J1)
+    jugar_mano_entera(partida)
+    evento = partida.eventos[-1]
+    assert partida.numero_mano == 2, "ya se repartio la siguiente"
+    assert (evento["tipo"], evento["numero"], evento["ganador"], evento["motivo"]) == \
+        ("mano", 1, J1, "rondas")
+    assert len(evento["rondas"]) == 2, "J1 gano las dos primeras: la tercera no se jugo"
+    assert evento["rondas"][0].carta_j1 == Carta(1, E)
+
+
+def test_el_motivo_de_la_mano_dice_como_termino():
+    partida = partida_armada(*GANA_J1)
+    partida.jugar(J1, Carta(1, E))
+    partida.irse_al_mazo(J2)
+    evento = partida.eventos[-1]
+    assert (evento["motivo"], evento["ganador"]) == ("mazo", J1)
+    assert evento["pendiente"] == (J1, Carta(1, E)), "la carta tirada sale en el resumen"
+
+    partida = partida_armada(*GANA_J1)
+    partida.cantar(J1, Canto.TRUCO)
+    partida.responder(J2, quiere=False)
+    evento = partida.eventos[-1]
+    assert (evento["motivo"], evento["canto"], evento["puntos"]) == ("no_quiso", Canto.TRUCO, 1)
+
+
+def test_irse_al_mazo_con_envido_pendiente_anota_el_envido_y_la_mano():
+    partida = partida_armada(*GANA_J1)
+    partida.cantar(J1, Canto.ENVIDO)
+    partida.irse_al_mazo(J2)
+    assert [(e["n"], e["tipo"]) for e in partida.eventos] == [(1, "envido"), (2, "mano")]
+
+
+def test_la_mano_que_cierra_la_partida_tambien_se_anota():
+    partida = partida_armada(*GANA_J1, puntos={J1: 29, J2: 0})
+    jugar_mano_entera(partida)
+    assert partida.terminada
+    assert partida.eventos[-1]["tipo"] == "mano"

@@ -6,15 +6,16 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.cells import cell_len
 
 PALOS = {
-    "espada": ("⚔", "bright_blue"),
-    "basto": ("♣", "green"),
-    "oro": ("◆", "yellow"),
-    "copa": ("♥", "red"),
+    "espada": ("†", "bright_blue"),
+    "basto": ("¦", "green"),
+    "oro": ("●", "yellow"),
+    "copa": ("⚱", "red"),
 }
 
-YO = "cyan"
+YO = "orange1"
 RIVAL = "magenta"
 
 ANCHO = 9           # lo que mide una carta dibujada
@@ -44,9 +45,13 @@ def carta(naipe, etiqueta=None):
     numero, palo = naipe[0], naipe[1]
     simbolo, color = PALOS.get(palo, ("?", "white"))
 
+    falta = 5 - cell_len(simbolo)
+    izq, der = falta // 2, falta - falta // 2
+    simbolo_centrado = " " * izq + simbolo + " " * der
+
     cuerpo = Text()
     cuerpo.append(f"{numero:<5}\n", style=color)
-    cuerpo.append(f"{simbolo:^5}\n", style=f"bold {color}")
+    cuerpo.append(f"{simbolo_centrado}\n", style=f"bold {color}")
     cuerpo.append(f"{numero:>5}", style=color)
 
     return Panel(cuerpo, width=ANCHO, border_style=color, padding=(0, 1),
@@ -57,14 +62,14 @@ def marcador(vista):
     puntos = vista["puntos"]
     texto = Text(justify="center")
     texto.append(f"{vista['yo']} ", style=f"bold {YO}")
-    texto.append(f"{puntos['yo']}", style=f"bold white on {YO}")
+    texto.append(f"{puntos['yo']}", style=f"bold {YO}")
     texto.append("   vs   ", style="dim")
-    texto.append(f"{puntos['rival']}", style=f"bold white on {RIVAL}")
+    texto.append(f"{puntos['rival']}", style=f"bold {RIVAL}")
     texto.append(f" {vista['rival']}", style=f"bold {RIVAL}")
 
     pie = (f"a {vista['puntos_para_ganar']}  ·  mano {vista['numero_mano']}  ·  "
-           f"{'sos mano' if vista['soy_mano'] else 'es mano el rival'}  ·  "
-           f"reloj {vista['reloj']}")
+           f"{'sos mano' if vista['soy_mano'] else 'es mano el rival'}"
+           )
 
     return Panel(Group(texto, Text(pie, justify="center", style="dim")),
                  title=f"[dim]mesa {vista['id_partida']}[/]", border_style="white")
@@ -137,7 +142,7 @@ def menu(acciones):
     texto = Text()
     for accion in acciones:
         texto.append(f" [{accion.tecla}] ", style="bold white on blue")
-        texto.append(f"{accion.texto}  ", style="white")
+        texto.append(f" {accion.texto}  ", style="white")
     return Panel(texto, border_style="blue")
 
 
@@ -152,33 +157,62 @@ def mesas_libres(libres):
 
 def bienvenida(id_partida, creada):
     texto = f"Estas en la mesa [bold {YO}]{id_partida}[/]"
-    if creada:
-        texto += "\nPasale ese id al otro jugador."
     return Panel(texto, border_style=YO)
 
 
 def final(vista):
     gane = vista["ganador"] == "yo"
-    return Panel(
-        Text(f"{'GANASTE' if gane else 'perdiste'}  "
-             f"{vista['puntos']['yo']} - {vista['puntos']['rival']}",
-             justify="center", style="bold"),
-        border_style="green" if gane else "red")
+    return _cartel(f"{'GANASTE' if gane else 'perdiste'}  "
+                   f"{vista['puntos']['yo']} - {vista['puntos']['rival']}", gane)
 
 
-# ---------- el failover ----------
+# ---------- lo que se resolvio: envidos y manos ----------
 
 
-def conectado(id_nodo):
-    return f"[green]✓[/] conectado al primario, el nodo [bold]{id_nodo}[/]"
+def _cartel(texto, gane, detalle=None, titulo=None):
+    """El panel de un resultado: verde si gane, rojo si no."""
+    lineas = [Text(texto, justify="center", style="bold")]
+    if detalle:
+        lineas.append(Text(detalle, justify="center", style="dim"))
+    return Panel(Group(*lineas), border_style="green" if gane else "red",
+                 title=f"[bold]{titulo}[/]" if titulo else None)
 
 
-def buscando_primario(segundos):
-    return f"[yellow]se perdio el primario, buscando al nuevo... ({segundos:.0f} s)[/]"
+def resultado_envido(evento, vista):
+    gane = evento["ganador"] == "yo"
+    canto = evento["canto"].upper()
+    texto = f"{'GANASTE' if gane else 'PERDISTE'} el {canto}  {f'+ {evento['puntos']}' if gane else ''}"
+
+    if evento["querido"]:
+        tantos = evento["tantos"]
+        detalle = f"tus tantos {tantos['yo']}  ·  {vista['rival']} {tantos['rival']}"
+    elif gane:
+        detalle = f"{vista['rival']} no quiso el {canto}"
+    else:
+        detalle = f"no quisiste el {canto}"
+    return _cartel(texto, gane, detalle)
 
 
-def reconectado(id_nodo):
-    return f"[green]✓[/] reconectado: ahora el primario es el nodo [bold]{id_nodo}[/]"
+def resultado_mano(consola, evento, vista):
+    """Toda la pantalla: el marcador, como quedo la mesa y quien se la llevo."""
+    consola.clear()
+    consola.print(marcador(vista))
+    if evento["rondas"]:
+        consola.print(mesa({"rondas": evento["rondas"], "rival": vista["rival"]}))
+
+    gane = evento["ganador"] == "yo"
+    texto = f"{'GANASTE' if gane else 'PERDISTE'} la mano  {f'+ {evento['puntos']}' if gane else ''}"
+    if evento["motivo"] == "mazo":
+        detalle = f"{vista['rival']} se fue al mazo" if gane else "te fuiste al mazo"
+    elif evento["motivo"] == "no_quiso":
+        canto = evento["canto"].upper()
+        detalle = f"{vista['rival']} no quiso el {canto}" if gane else f"no quisiste el {canto}"
+    else:
+        detalle = None
+    consola.print(_cartel(texto, gane, detalle, titulo=f"mano {evento['numero']}"))
+
+
+# ---------- sin servicio ----------
 
 
 def sin_servicio(error):

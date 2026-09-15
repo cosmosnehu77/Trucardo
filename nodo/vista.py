@@ -3,6 +3,10 @@
 
 from juego import EMPATE, Canto, rival
 
+# Entre dos consultas del cliente se resuelven uno o dos (un envido y la mano
+# si alguien se va al mazo): con los ultimos alcanza.
+ULTIMOS_EVENTOS = 5
+
 
 def armar_vista(mesa, sesion, reloj):
     """El dict que ve este jugador. Tiene siempre las mismas claves, en
@@ -27,6 +31,7 @@ def armar_vista(mesa, sesion, reloj):
         "cantos_posibles": [],
         "canto_pendiente": None,
         "ganador": None,
+        "eventos": [],
     }
 
     partida = mesa.partida
@@ -41,23 +46,41 @@ def armar_vista(mesa, sesion, reloj):
         "mis_cartas": [list(c) for c in partida.cartas_de(yo)],
         "cartas_del_rival": len(partida.cartas_de(rival(yo))),   # cuantas, no cuales
         "mi_envido": partida.mano.envido(yo),
-        "rondas": _rondas(partida.mano, yo),
+        "rondas": _rondas(partida.mano.rondas, partida.mano.pendiente, yo),
         "apuesta_truco": _texto(partida.apuesta.truco),
         "es_mi_turno": not partida.terminada and partida.turno == yo,
         # lo decide el motor: el cliente solo lo muestra
         "cantos_posibles": [c.value for c in Canto if partida.puede_cantar(yo, c)],
         "canto_pendiente": _canto_pendiente(partida.apuesta.pendiente, yo),
         "ganador": _quien(partida.ganador, yo),
+        "eventos": [_evento(evento, yo) for evento in partida.eventos[-ULTIMOS_EVENTOS:]],
     })
     return vista
 
 
-def _rondas(mano, yo):
-    """Las rondas de la mano con las cartas enfrentadas (las tiradas son
+def _evento(evento, yo):
+    """Un envido o una mano ya resueltos, contados desde este jugador."""
+    plano = {"n": evento["n"], "tipo": evento["tipo"],
+             "ganador": _quien(evento["ganador"], yo), "puntos": evento["puntos"],
+             "canto": _texto(evento["canto"])}
+
+    if evento["tipo"] == "envido":
+        plano["querido"] = evento["querido"]
+        if "tantos" in evento:
+            plano["tantos"] = {"yo": evento["tantos"][yo],
+                               "rival": evento["tantos"][rival(yo)]}
+    else:
+        plano.update({"numero": evento["numero"], "motivo": evento["motivo"],
+                      "rondas": _rondas(evento["rondas"], evento["pendiente"], yo)})
+    return plano
+
+
+def _rondas(rondas_jugadas, pendiente, yo):
+    """Las rondas de una mano con las cartas enfrentadas (las tiradas son
     publicas). La ronda a medio jugar viene con None en la carta que falta."""
     rondas = []
 
-    for ronda in mano.rondas:
+    for ronda in rondas_jugadas:
         cartas = {1: ronda.carta_j1, 2: ronda.carta_j2}
         rondas.append({
             "yo": list(cartas[yo]),
@@ -65,8 +88,8 @@ def _rondas(mano, yo):
             "gano": "parda" if ronda.ganador == EMPATE else _quien(ronda.ganador, yo),
         })
 
-    if mano.pendiente is not None:
-        quien, carta = mano.pendiente
+    if pendiente is not None:
+        quien, carta = pendiente
         rondas.append({
             "yo": list(carta) if quien == yo else None,
             "rival": None if quien == yo else list(carta),

@@ -18,7 +18,7 @@ NOMBRE_OBJETO = "truco"
 PAUSA = 0.5     # entre dos intentos fallidos
 
 # El nodo escucha solo en IPv4, y "localhost" puede resolver primero a ::1.
-Pyro5.config.PREFER_IP_VERSION = 4
+Pyro5.config.PREFER_IP_VERSION = 4 # type: ignore[assignment]
 
 
 class SinServicio(Exception):
@@ -26,13 +26,12 @@ class SinServicio(Exception):
 
 
 class Conexion:
-    def __init__(self, nodos, reloj, al_reintentar=None,
+    def __init__(self, nodos, reloj,
                  timeout=config.TIMEOUT_RPC, reintento_total=config.REINTENTO_TOTAL):
-        """`al_reintentar(segundos)` se llama en cada intento fallido, y con
-        None al reconectar: es para el spinner."""
+        """El failover no se avisa: para el que llama, la llamada solo tarda
+        mas. Lo unico que sube es SinServicio."""
         self.nodos = nodos
         self.reloj = reloj
-        self.al_reintentar = al_reintentar or (lambda segundos: None)
         self.timeout = timeout
         self.reintento_total = reintento_total
         self.primario = None            # a quien creo que hay que hablarle
@@ -43,7 +42,7 @@ class Conexion:
         """Llama a `metodo` en el primario. Agrega al final el sello de
         Lamport, uno por intento. ValueError (jugada ilegal) pasa derecho."""
         desde = time.monotonic()
-        buscando = redirigido = False
+        redirigido = False
         while True:
             id_nodo = self.primario if self.primario is not None else next(self._orden)
             try:
@@ -64,8 +63,6 @@ class Conexion:
                 self.primario = id_nodo
                 if isinstance(respuesta, dict) and "reloj" in respuesta:
                     self.reloj.recibir(respuesta["reloj"])
-                if buscando:
-                    self.al_reintentar(None)
                 return respuesta
 
             redirigido = False
@@ -73,8 +70,6 @@ class Conexion:
             if segundos >= self.reintento_total:
                 self._soltar()
                 raise SinServicio(f"ningun nodo atendio en {self.reintento_total:.0f} s")
-            buscando = True
-            self.al_reintentar(segundos)
             time.sleep(PAUSA)
 
     def _proxy_a(self, id_nodo):

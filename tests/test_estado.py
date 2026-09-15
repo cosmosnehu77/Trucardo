@@ -111,3 +111,22 @@ def test_ya_aplicada_viaja_con_el_log():
     assert backup.ya_aplicada(activo, op["id_operacion"])
     assert backup.ya_aplicada(j2, j2), "entrar tambien: la sesion ya existe"
     assert not backup.ya_aplicada(activo, "otra-op")
+
+
+def test_la_vista_cuenta_los_eventos_desde_cada_jugador():
+    """El mismo envido es "yo" para uno y "rival" para el otro, y la vista
+    trae la clave aunque todavia no haya pasado nada."""
+    estado = EstadoServicio()
+    j1, j2 = _mesa(estado, "aaaaaa", 11)
+    assert _vista(estado, j1)["eventos"] == []
+
+    mano = j1 if _vista(estado, j1)["es_mi_turno"] else j2
+    otro = j2 if mano == j1 else j1
+    _op(estado, "cantar", mano, {"canto": "envido"})
+    _op(estado, "responder", otro, {"quiere": True})
+
+    del_mano, del_otro = _vista(estado, mano)["eventos"][0], _vista(estado, otro)["eventos"][0]
+    assert {del_mano["ganador"], del_otro["ganador"]} == {"yo", "rival"}
+    assert del_mano["tantos"] == {"yo": del_otro["tantos"]["rival"],
+                                  "rival": del_otro["tantos"]["yo"]}
+    assert del_mano["canto"] == "envido" and del_mano["querido"] is True

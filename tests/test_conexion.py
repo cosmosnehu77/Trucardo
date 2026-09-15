@@ -35,14 +35,11 @@ def test_si_se_cae_el_primario_sigue_con_el_nuevo():
     daemon1, nodo1 = _nodo_pyro(1, primario=2)
     daemon2, nodo2 = _nodo_pyro(2, primario=2)
     nodos = {1: nodo1, 2: nodo2, 3: Nodo(3, "127.0.0.1", _puerto_libre(), 0)}
-    avisos = []
-    conexion = Conexion(nodos, Reloj(), al_reintentar=avisos.append)
+    conexion = Conexion(nodos, Reloj())
     conexion.primario = 3
     try:
         assert conexion.llamar("listar_partidas") == [], "el pedido sale en N2"
         assert conexion.primario == 2, "y queda hablandole al nuevo"
-        assert avisos and avisos[-1] is None, "el spinner se abre y se cierra"
-        assert all(isinstance(segundos, float) for segundos in avisos[:-1])
     finally:
         conexion._soltar()
         daemon1.shutdown()

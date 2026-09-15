@@ -22,6 +22,10 @@ class Partida:
         self.numero_mano = 0
         self.mano = None
         self.apuesta = None
+        # Lo que se resolvio (envidos y manos), en orden. La vista los manda
+        # para que el cliente muestre el resultado: la mano se reparte de nuevo
+        # en el acto y sin esto no queda rastro de como termino.
+        self.eventos = []
         self._repartir()
 
     @property
@@ -67,7 +71,7 @@ class Partida:
             self.apuesta.envido_resuelto = True
 
         if self.mano.terminada:
-            self._terminar_mano(self.mano.ganador, self.apuesta.puntos)
+            self._terminar_mano(self.mano.ganador, self.apuesta.puntos, "rondas")
 
     # --- cantar ---
 
@@ -138,9 +142,10 @@ class Partida:
         if canto.es_de_envido:
             # el envido no querido no corta la mano
             self.apuesta.envido_resuelto = True
+            self._anotar("envido", ganador=cantor, puntos=puntos, canto=canto, querido=False)
             self._sumar(cantor, puntos)
         else:
-            self._terminar_mano(cantor, puntos)
+            self._terminar_mano(cantor, puntos, "no_quiso", canto=canto)
 
     def _envido_querido(self, canto):
         if canto is Canto.FALTA_ENVIDO:
@@ -149,7 +154,10 @@ class Partida:
         else:
             puntos = PUNTOS_QUERIDO[canto]
         self.apuesta.envido_resuelto = True
-        self._sumar(self.mano.ganador_envido(), puntos)
+        ganador = self.mano.ganador_envido()
+        self._anotar("envido", ganador=ganador, puntos=puntos, canto=canto, querido=True,
+                     tantos={1: self.mano.envido(1), 2: self.mano.envido(2)})
+        self._sumar(ganador, puntos)
 
     # --- irse al mazo ---
 
@@ -165,16 +173,26 @@ class Partida:
             if not canto.es_de_envido:
                 return
 
-        self._terminar_mano(rival(jugador), self.apuesta.puntos)
+        self._terminar_mano(rival(jugador), self.apuesta.puntos, "mazo")
 
     # --- cierre ---
 
-    def _terminar_mano(self, ganador, puntos):
+    def _terminar_mano(self, ganador, puntos, motivo, canto=None):
+        """motivo: "rondas", "no_quiso" (un canto del truco, que va en canto)
+        o "mazo". Se anota antes de repartir, con las cartas que quedaron en
+        la mesa, y tambien si con esta mano termina la partida."""
+        self._anotar("mano", ganador=ganador, puntos=puntos, motivo=motivo, canto=canto,
+                     numero=self.numero_mano, rondas=list(self.mano.rondas),
+                     pendiente=self.mano.pendiente)
         self._sumar(ganador, puntos)
         if self.terminada:
             return
         self.el_mano = rival(self.el_mano)
         self._repartir()
+
+    def _anotar(self, tipo, **datos):
+        """n arranca en 1 y sirve al cliente para saber que ya mostro."""
+        self.eventos.append({"n": len(self.eventos) + 1, "tipo": tipo, **datos})
 
     def _sumar(self, jugador, puntos):
         self.puntos[jugador] = min(self.puntos[jugador] + puntos, self.puntos_para_ganar)

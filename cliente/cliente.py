@@ -24,6 +24,10 @@ TECLAS = {
     "truco": "t", "retruco": "t", "vale_cuatro": "t",
 }
 
+# Cuanto queda a la vista cada resultado antes de seguir.
+PAUSA_ENVIDO = 2.5
+PAUSA_MANO = 3.5
+
 
 class Accion(NamedTuple):
     """Una opcion del menu."""
@@ -39,27 +43,26 @@ class Cliente:
         self.consola = Console()
         self.reloj = Reloj()
         self.id_sesion = None
-        self.conexion = Conexion(nodos, self.reloj, al_reintentar=self._avisar)
-        # el spinner abierto: el de _esperar (con su texto) o uno propio de _avisar
-        self._spinner = None
-        self._texto_spinner = None
-        self._spinner_propio = False
+        self.conexion = Conexion(nodos, self.reloj)
+        self._visto = 0         # el ultimo evento (envido o mano) que ya mostre
 
     # ---------- entrar ----------
 
     def entrar(self, nombre):
         """Elige una mesa que espera rival, o crea una nueva."""
         libres = self._llamar("listar_partidas")
-        self.consola.print(pantalla.conectado(self.conexion.primario))
-        elegida = ""
-        if libres:
-            self.consola.print(pantalla.mesas_libres(libres))
-            elegida = self.consola.input(
-                "[bold]Id de la mesa (Enter para crear una nueva):[/] ").strip()
-        else:
-            self.consola.print("[dim]No hay mesas esperando. Creo una nueva.[/]")
 
-        # lo inventa el cliente: si hay que reintentar, va el mismo
+        elegida = libres[0]["id_partida"] if libres else ""
+
+
+        # Si volvemos a habilitar elegir una mesa libre manualmente
+        #  if libres:
+        #     # self.consola.print(pantalla.mesas_libres(libres))
+        #     # elegida = self.consola.input(
+        #     #     "[bold]Id de la mesa (Enter para crear una nueva):[/] ").strip()
+        # else:
+        #     self.consola.print("[dim]No hay mesas esperando. Creo una nueva.[/]")
+
         id_sesion = uuid.uuid4().hex
         datos = (self._llamar("unirse", elegida, nombre, id_sesion) if elegida
                  else self._llamar("crear_partida", nombre, id_sesion))
@@ -102,13 +105,10 @@ class Cliente:
     # ---------- hablar con el servidor ----------
 
     def _llamar(self, metodo, *args):
-        """Toda llamada al servidor pasa por aca. Si no atiende nadie, cierra
-        el spinner y deja subir SinServicio."""
-        try:
-            return self.conexion.llamar(metodo, *args)
-        except SinServicio:
-            self._cerrar_spinner()
-            raise
+        """Toda llamada al servidor pasa por aca. Si se cae el primario, la
+        Conexion lo busca y reintenta sin que se note: la llamada solo tarda
+        mas. Si no atiende nadie, sube SinServicio."""
+        return self.conexion.llamar(metodo, *args)
 
     def _id_operacion(self):
         """Un uuid por cada cosa que decide el jugador: un contador se
@@ -132,36 +132,42 @@ class Cliente:
         time.sleep(1.5)
         return None
 
-    # ---------- el spinner del failover ----------
+    # ---------- lo que se resolvio ----------
 
-    def _avisar(self, segundos):
-        """Lo llama la Conexion mientras busca al primario (con los segundos)
-        y cuando lo encuentra (con None). Un solo spinner a la vez."""
-        if segundos is None:
-            self._cerrar_spinner()
-            self.consola.print(pantalla.reconectado(self.conexion.primario))
-            return
-        texto = pantalla.buscando_primario(segundos)
-        if self._spinner is None:
-            self._spinner = self.consola.status(texto, spinner="dots")
-            self._spinner.start()
-            self._spinner_propio = True
-        else:
-            self._spinner.update(texto)
+    def _nuevos(self, vista):
+        """Los envidos y manos resueltos que todavia no mostre."""
+        return [evento for evento in vista["eventos"] if evento["n"] > self._visto]
 
-    def _cerrar_spinner(self):
-        """Cierra el spinner propio, o le devuelve su texto al de _esperar."""
-        if self._spinner_propio:
-            self._spinner.stop()
-            self._spinner, self._spinner_propio = None, False
-        elif self._spinner is not None:
-            self._spinner.update(self._texto_spinner)
+    def _mostrar_eventos(self, vista):
+        """Un cartel por cada resultado nuevo, con una pausa para leerlo. La
+        pausa es de este cliente: el servidor no espera a nadie."""
+        nuevos = self._nuevos(vista)
+        for evento in nuevos:
+            if evento["tipo"] == "envido":
+                if any(otro["tipo"] == "mano" for otro in nuevos if otro["n"] > evento["n"]):
+                    # la mano ya termino (se fue al mazo): las cartas de la
+                    # vista son de la siguiente, no van debajo de este cartel
+                    self.consola.clear()
+                    self.consola.print(pantalla.marcador(vista))
+                else:
+                    pantalla.dibujar(self.consola, vista)
+                self.consola.print(pantalla.resultado_envido(evento, vista))
+                pausa, aviso = PAUSA_ENVIDO, "sigue la mano..."
+            else:
+                pantalla.resultado_mano(self.consola, evento, vista)
+                pausa = PAUSA_MANO
+                aviso = "fin de la partida..." if vista["estado"] == "terminada" \
+                    else "repartiendo la mano siguiente..."
+            with self.consola.status(f"[dim]{aviso}[/]", spinner="dots"):
+                time.sleep(pausa)
+            self._visto = evento["n"]
 
     # ---------- bucle ----------
 
     def jugar(self):
         while True:
             vista = self._llamar("ver", self.id_sesion)
+            self._mostrar_eventos(vista)
             pantalla.dibujar(self.consola, vista)
 
             if vista["estado"] == "terminada":
@@ -174,19 +180,16 @@ class Cliente:
                 self._esperar(vista["estado"] == "esperando_rival")
 
     def _esperar(self, falta_rival):
-        """Refresca solo hasta que me toque."""
+        """Refresca solo hasta que me toque, o hasta que se resuelva algo que
+        haya que mostrar (asi los dos ven el resultado de la mano a la vez)."""
         aviso = "esperando que se sume el rival..." if falta_rival else "le toca al rival..."
-        texto = f"[dim]{aviso}[/]"
-        with self.consola.status(texto, spinner="dots") as spinner:
-            self._spinner, self._texto_spinner = spinner, texto
-            try:
-                while True:
-                    time.sleep(1)
-                    vista = self._llamar("ver", self.id_sesion)
-                    if vista["es_mi_turno"] or vista["estado"] == "terminada":
-                        return
-            finally:
-                self._spinner = self._texto_spinner = None
+        with self.consola.status(f"[dim]{aviso}[/]", spinner="dots"):
+            while True:
+                time.sleep(1)
+                vista = self._llamar("ver", self.id_sesion)
+                if (vista["es_mi_turno"] or vista["estado"] == "terminada"
+                        or self._nuevos(vista)):
+                    return
 
 
 def main():
