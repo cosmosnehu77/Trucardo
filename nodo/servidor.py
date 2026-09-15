@@ -15,10 +15,11 @@ import uuid
 import Pyro5.api
 
 from nodo import config, registro
+from nodo.cluster.protocolo import AL_DIA, ATRASADO, DUPLICADA, ILEGAL
 from nodo.errores import NoPrimario
 from nodo.estado import EstadoServicio
 from nodo.lamport import Reloj
-from nodo.membresia import Membresia
+from nodo.cluster import Membresia
 from nodo.registro import log
 from nodo.vista import armar_vista
 
@@ -152,29 +153,78 @@ class ServidorTruco:
             op = {"seq": self.estado.ultimo_seq + 1, "epoca": self.epoca,
                   "lamport": self.reloj.tic(), "tipo": tipo, "id_sesion": id_sesion,
                   "id_operacion": id_operacion, "datos": datos}
+
             self.estado.aplicar(op)
+
+            replicas = ""
             if self.__membresia is not None:
-                self.__membresia.replicar(op)
+                respuestas = self.__membresia.replica.replicar(op)
                 if self.rol != "primario":
                     # replicando me entere de que ya no mando: no se confirma
                     raise NoPrimario(None)
+                al_dia = sum(1 for r in respuestas.values() if r.get("ok"))
+                replicas = f" · la tienen {al_dia}/{len(respuestas)} de los que contestaron"
+
             sesion = self.estado.sesion(id_sesion)
-            log.info(f"op {op['seq']} · {tipo} · {sesion.nombre} · mesa {sesion.id_mesa}")
+            log.info(f"op {op['seq']} · {tipo} · {sesion.nombre} · "
+                     f"mesa {sesion.id_mesa}{replicas}")
             return op["lamport"]
 
-    def _atiendo_replica(self, operacion):
-        """Aplica una op que manda el primario. Devuelve si pudo."""
+    # ---------- el otro lado: lo que me replica el primario ----------
+
+    def _atiendo_replica(self, op):
+        """Aplica la op que manda el primario. Devuelve None si quedo al dia,
+        o el motivo por el que no."""
         with self.lock:
-            try:
-                self.estado.aplicar(operacion)
-            except Exception as error:
-                log.warning(f"no pude aplicar la replica de la op "
-                            f"{operacion.get('seq')}: {error}")
-                return False
-            sesion = self.estado.sesion(operacion["id_sesion"])
-            log.info(f"op {operacion['seq']} · {operacion['tipo']} · {sesion.nombre} · "
-                     f"mesa {sesion.id_mesa}")
-            return True
+            motivo = self._aplicar_replica(op)
+            if motivo is None:
+                sesion = self.estado.sesion(op["id_sesion"])
+                log.info(f"op {op['seq']} · {op['tipo']} · {sesion.nombre} · "
+                         f"mesa {sesion.id_mesa}")
+            return motivo
+
+    def _atiendo_puesta_al_dia(self, ops):
+        """Aplica en orden las ops que me faltaban. Devuelve None si con eso
+        quedo al dia, o el motivo por el que se corto."""
+        with self.lock:
+            desde = self.estado.ultimo_seq
+            for op in ops:
+                motivo = self._aplicar_replica(op)
+                if motivo not in AL_DIA:
+                    log.warning(f"la puesta al dia se corto en la op "
+                                f"{op.get('seq') if isinstance(op, dict) else op!r}: {motivo}")
+                    return motivo
+            log.info(f"puesta al dia: de la op {desde} a la {self.estado.ultimo_seq}")
+            return None
+
+    def _aplicar_replica(self, op):
+        """El nucleo de las dos de arriba, sin loguear. Devuelve None si la
+        aplico, o por que no:
+
+            DUPLICADA  ya la tenia; llego dos veces y no hay nada que hacer
+            ATRASADO   me faltan ops antes de esta: el primario me tiene que
+                       poner al dia
+            ILEGAL     el motor la rechazo aunque al primario le funciono. Eso
+                       es que los estados divergieron, y mandarme el log no lo
+                       arregla: hay que mirar que dejo de ser determinista.
+
+        Se mira el seq antes de aplicar en vez de dejar que aplicar() tire
+        RuntimeError, porque ese error no distingue la op vieja de la futura y
+        son casos opuestos. Con el lock tomado.
+        """
+        if not isinstance(op, dict) or "seq" not in op:
+            return ILEGAL
+        if op["seq"] <= self.estado.ultimo_seq:
+            return DUPLICADA
+        if op["seq"] > self.estado.ultimo_seq + 1:
+            return ATRASADO
+
+        try:
+            self.estado.aplicar(op)
+        except Exception as error:
+            log.warning(f"no pude aplicar la op {op['seq']}: {error}")
+            return ILEGAL
+        return None
 
     # ---------- respuestas ----------
 

@@ -5,11 +5,11 @@ import logging
 import socket
 import time
 
-from nodo import membresia as membresia_mod
+from nodo.cluster import eleccion as eleccion_mod
 from nodo import transporte
 from nodo.config import Nodo
 from nodo.errores import NoPrimario
-from nodo.membresia import Membresia
+from nodo.cluster import Membresia
 from nodo.registro import log
 from nodo.servidor import ServidorTruco
 
@@ -160,13 +160,13 @@ def test_si_el_ganador_muere_en_plena_eleccion_se_reintenta():
     try:
         membresias[1] = _arrancar(cluster, 1, primario=2)     # N2 nunca late
         intentos = []
-        convocar = membresias[1]._convocar
+        convocar = membresias[1].eleccion.convocar
 
         def contando():
             intentos.append(time.monotonic())
             return convocar()
 
-        membresias[1]._convocar = contando
+        membresias[1].eleccion.convocar = contando
 
         assert _esperar(lambda: membresias[1].nodo.rol == "primario",
                         limite=TIMEOUT + 3 * TIMEOUT_ELECCION + 2), \
@@ -191,11 +191,11 @@ def test_entre_dos_coronados_de_la_misma_epoca_gana_el_id_mayor():
                 membresias[i].nodo.primario = i
                 membresias[i].nodo.epoca = 1
 
-        respuesta = membresias[2]._al_coordinador(membresias[1].mensaje("COORDINADOR"))
+        respuesta = membresias[2].eleccion.al_coordinador(membresias[1].mensaje("COORDINADOR"))
         assert respuesta["ok"] is False, "N2 le gana el desempate: no se baja"
         assert membresias[2].nodo.rol == "primario"
 
-        respuesta = membresias[1]._al_coordinador(membresias[2].mensaje("COORDINADOR"))
+        respuesta = membresias[1].eleccion.al_coordinador(membresias[2].mensaje("COORDINADOR"))
         assert respuesta["ok"] is True, "N1 pierde el desempate: lo adopta"
         assert membresias[1].nodo.rol == "backup"
         assert membresias[1].nodo.primario == 2
@@ -228,20 +228,20 @@ def test_la_eleccion_usa_el_jitter_de_la_instancia():
     """_convocar usa el jitter del nodo y no el de config."""
     cluster, membresias = _cluster()
     dormidas = []
-    uniform = membresia_mod.random.uniform
+    uniform = eleccion_mod.random.uniform
 
     def espiando(a, b):
         dormidas.append((a, b))
         return uniform(a, b)
 
-    membresia_mod.random.uniform = espiando
+    eleccion_mod.random.uniform = espiando
     try:
         membresias[3].detener()
         assert _esperar(lambda: dormidas), "no convoco nadie"
         assert set(dormidas) == {JITTER}, \
             f"durmio {sorted(set(dormidas))} y el del nodo es {JITTER}"
     finally:
-        membresia_mod.random.uniform = uniform
+        eleccion_mod.random.uniform = uniform
         _apagar(membresias)
 
 
@@ -281,7 +281,7 @@ def test_el_latido_rechazado_igual_entra_al_reloj():
             membresias[2].nodo.epoca = 9
         membresias[2].nodo.reloj.recibir(500)
 
-        membresias[3]._latir_a(2, 0)
+        membresias[3].latido.latir_a(2, 0)
 
         assert membresias[3].nodo.rol == "backup", \
             "el rechazo lo tiene que bajar, que es la rama que estamos probando"
