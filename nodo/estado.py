@@ -131,9 +131,14 @@ class EstadoServicio:
             raise ValueError("ese id_sesion ya esta sentado en una mesa")
         
     def buscar_sesion_por_nombre(self, nombre):
-        for sesion in self.sesiones:
-            if nombre == sesion.split('-')[0]:
-                return sesion
+        """La sesion mas nueva de ese nombre cuya partida sigue viva (en juego
+        o esperando rival). Una partida terminada no se retoma."""
+        for sesion in reversed(list(self.sesiones.values())):
+            if sesion.nombre != nombre:
+                continue
+            partida = self.mesas[sesion.id_mesa].partida
+            if partida is None or not partida.terminada:
+                return sesion.id_sesion
         return None
 
     def _sentar(self, mesa, id_sesion, nombre, jugador):

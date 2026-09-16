@@ -46,6 +46,7 @@ class Cliente:
         self.conexion = Conexion(nodos, self.reloj)
         self._visto = 0         # el ultimo evento (envido o mano) que ya mostre
 
+
     # ---------- entrar ----------
 
     def entrar(self, nombre):
@@ -68,6 +69,8 @@ class Cliente:
         datos = (self._llamar("unirse", elegida, nombre, id_sesion) if elegida
                  else self._llamar("crear_partida", nombre, id_sesion))
         self.id_sesion = datos["id_sesion"]
+        # cada partida numera sus eventos desde 1
+        self._visto = 0
         self.consola.print(pantalla.bienvenida(datos["id_partida"], creada=not elegida))
 
     # ---------- que puede hacer ----------
@@ -197,7 +200,13 @@ class Cliente:
         if res is None:
             return False
         self.id_sesion = res
+        vista = self._llamar("ver", self.id_sesion)
+        self._visto = max((e["n"] for e in vista["eventos"]), default=0)
         return True
+
+    def otra_partida(self):
+        respuesta = self.consola.input("[bold]¿Jugar otra? (s/n):[/] ").strip().lower()
+        return respuesta == "s"
 
 def main():
     nombre = (sys.argv[1] if len(sys.argv) > 1
@@ -213,7 +222,11 @@ def main():
         res = cliente.tengo_sesion_existente(nombre)
         if not res:
             cliente.entrar(nombre)
-        cliente.jugar()
+        while True:
+            cliente.jugar()
+            if not cliente.otra_partida():
+                break
+            cliente.entrar(nombre)
     except KeyboardInterrupt:
         cliente.consola.print("\n[dim]chau.[/]")
     except SinServicio as error:
