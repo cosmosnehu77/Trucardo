@@ -162,8 +162,11 @@ def bienvenida(id_partida, creada):
 
 def final(vista):
     gane = vista["ganador"] == "yo"
-    return _cartel(f"{'GANASTE' if gane else 'perdiste'}  "
-                   f"{vista['puntos']['yo']} - {vista['puntos']['rival']}", gane)
+    if gane:
+        return _cartel("GANASTE "+f"{vista['puntos']['yo']}"+"- "+f"{vista['puntos']['rival']}", gane)
+    else:
+        return _cartel("perdiste "+f"{vista['puntos']['yo']}"+"- "+f"{vista['puntos']['rival']}", gane)
+    #return _cartel(f"{'GANASTE' if gane else 'perdiste'}  " f"{vista['puntos']['yo']} - {vista['puntos']['rival']}", gane)
 
 
 # ---------- lo que se resolvio: envidos y manos ----------
@@ -181,7 +184,7 @@ def _cartel(texto, gane, detalle=None, titulo=None):
 def resultado_envido(evento, vista):
     gane = evento["ganador"] == "yo"
     canto = evento["canto"].upper()
-    texto = f"{'GANASTE' if gane else 'PERDISTE'} el {canto}  {f'+ {evento['puntos']}' if gane else ''}"
+    texto = "GANASTE el "+canto+" + "+f"{evento['puntos']}" if gane else "PERDISTE el "+canto
 
     if evento["querido"]:
         tantos = evento["tantos"]
@@ -201,7 +204,8 @@ def resultado_mano(consola, evento, vista):
         consola.print(mesa({"rondas": evento["rondas"], "rival": vista["rival"]}))
 
     gane = evento["ganador"] == "yo"
-    texto = f"{'GANASTE' if gane else 'PERDISTE'} la mano  {f'+ {evento['puntos']}' if gane else ''}"
+    texto = "GANASTE la mano  +"+f"{evento['puntos']}" if gane else "PERDISTE la mano"
+    #texto = f"{'GANASTE' if gane else 'PERDISTE'} la mano  {f'+ {evento['puntos']}' if gane else ''}"
     if evento["motivo"] == "mazo":
         detalle = f"{vista['rival']} se fue al mazo" if gane else "te fuiste al mazo"
     elif evento["motivo"] == "no_quiso":

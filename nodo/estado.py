@@ -40,6 +40,7 @@ class Mesa:
     """Una partida y los nombres de sus jugadores. La partida arranca cuando
     se sienta el segundo."""
 
+
     def __init__(self, id_mesa, semilla, puntos, creada_en=0):
         self.id = id_mesa
         self.semilla = semilla
@@ -99,8 +100,9 @@ class EstadoServicio:
         id_mesa = datos["id_mesa"]
         if id_mesa in self.mesas:
             raise ValueError(f"ya existe la partida {id_mesa}")
+        
         self._verificar_sesion_nueva(id_sesion)
-
+        
         mesa = Mesa(id_mesa, datos["semilla"], datos["puntos"], creada_en=lamport)
         self.mesas[id_mesa] = mesa
         self._sentar(mesa, id_sesion, datos["nombre"], 1)
@@ -109,8 +111,9 @@ class EstadoServicio:
         mesa = self.mesa(datos["id_mesa"])
         if mesa.completa:
             raise ValueError(f"la mesa {mesa.id} ya tiene dos jugadores")
-        self._verificar_sesion_nueva(id_sesion)
-
+        
+        self._verificar_sesion_nueva(id_sesion)    
+    
         self._sentar(mesa, id_sesion, datos["nombre"], 2)
         mesa.partida = Partida(semilla=mesa.semilla, puntos_para_ganar=mesa.puntos)
 
@@ -119,6 +122,12 @@ class EstadoServicio:
             raise ValueError("falta el id_sesion")
         if id_sesion in self.sesiones:
             raise ValueError("ese id_sesion ya esta sentado en una mesa")
+        
+    def buscar_sesion_por_nombre(self, nombre):
+        for sesion in self.sesiones:
+            if nombre == sesion.split('-')[0]:
+                return sesion
+        return None
 
     def _sentar(self, mesa, id_sesion, nombre, jugador):
         mesa.nombres[jugador] = nombre

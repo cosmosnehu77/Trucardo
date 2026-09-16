@@ -73,6 +73,10 @@ class ServidorTruco:
 
     # ---------- entrar a una partida ----------
 
+    def existe_sesion_anterior(self, nombre, lamport=0):
+        with self.lock:
+            return self.estado.buscar_sesion_por_nombre(nombre)
+
     def crear_partida(self, nombre, id_sesion, lamport=0):
         """Crea una mesa y sienta al jugador 1. El id_sesion lo inventa el
         cliente: si reintenta, no se crea otra mesa."""

@@ -63,7 +63,8 @@ class Cliente:
         # else:
         #     self.consola.print("[dim]No hay mesas esperando. Creo una nueva.[/]")
 
-        id_sesion = uuid.uuid4().hex
+        id_sesion = f"{nombre}-{uuid.uuid4().hex}"
+
         datos = (self._llamar("unirse", elegida, nombre, id_sesion) if elegida
                  else self._llamar("crear_partida", nombre, id_sesion))
         self.id_sesion = datos["id_sesion"]
@@ -191,6 +192,12 @@ class Cliente:
                         or self._nuevos(vista)):
                     return
 
+    def tengo_sesion_existente (self, nombre):
+        res = self._llamar("existe_sesion_anterior", nombre)
+        if res is None:
+            return False
+        self.id_sesion = res
+        return True
 
 def main():
     nombre = (sys.argv[1] if len(sys.argv) > 1
@@ -203,7 +210,9 @@ def main():
 
     cliente = Cliente(nodos)
     try:
-        cliente.entrar(nombre)
+        res = cliente.tengo_sesion_existente(nombre)
+        if not res:
+            cliente.entrar(nombre)
         cliente.jugar()
     except KeyboardInterrupt:
         cliente.consola.print("\n[dim]chau.[/]")
