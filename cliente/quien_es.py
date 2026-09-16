@@ -7,27 +7,17 @@
 import sys
 import time
 
-import Pyro5.api
-import Pyro5.errors
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
-from cliente.conexion import NOMBRE_OBJETO
+from cliente.conexion import preguntar
 from nodo import config
-
-# el nodo escucha solo en IPv4
-Pyro5.config.PREFER_IP_VERSION = 4
 
 
 def consultar(nodo):
     """Lo que contesta un nodo, o None si no contesta a tiempo."""
-    try:
-        with Pyro5.api.Proxy(f"PYRO:{NOMBRE_OBJETO}@{nodo.host}:{nodo.puerto_pyro}") as proxy:
-            proxy._pyroTimeout = config.TIMEOUT_RPC
-            return proxy.quien_es_primario()
-    except (Pyro5.errors.PyroError, OSError):
-        return None
+    return preguntar(nodo, "quien_es_primario")
 
 
 def tabla(cluster):

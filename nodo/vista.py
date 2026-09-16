@@ -27,6 +27,8 @@ def armar_vista(mesa, sesion, reloj):
         "mi_envido": 0,
         "rondas": [],
         "apuesta_truco": None,
+        "envido_en_juego": None,
+        "truco_esperando": None,
         "es_mi_turno": False,
         "cantos_posibles": [],
         "canto_pendiente": None,
@@ -48,6 +50,8 @@ def armar_vista(mesa, sesion, reloj):
         "mi_envido": partida.mano.envido(yo),
         "rondas": _rondas(partida.mano.rondas, partida.mano.pendiente, yo),
         "apuesta_truco": _texto(partida.apuesta.truco),
+        "envido_en_juego": partida.envido_en_juego,
+        "truco_esperando": _texto(partida.truco_esperando),
         "es_mi_turno": not partida.terminada and partida.turno == yo,
         # lo decide el motor: el cliente solo lo muestra
         "cantos_posibles": [c.value for c in Canto if partida.puede_cantar(yo, c)],
@@ -66,6 +70,7 @@ def _evento(evento, yo):
 
     if evento["tipo"] == "envido":
         plano["querido"] = evento["querido"]
+        plano["cadena"] = [str(canto) for canto in evento["cadena"]]
         if "tantos" in evento:
             plano["tantos"] = {"yo": evento["tantos"][yo],
                                "rival": evento["tantos"][rival(yo)]}

@@ -490,3 +490,71 @@ def test_dos_partidas_en_paralelo_desde_dos_hilos():
         assert final1["id_partida"] == final2["id_partida"], "los dos de la misma mesa"
         assert final1["puntos"]["yo"] == final2["puntos"]["rival"], "y ven el mismo puntaje"
     assert finales["a"][0]["id_partida"] != finales["b"][0]["id_partida"]
+
+
+# --- seguir una partida desde afuera ---
+
+def test_listar_mesas_trae_tambien_las_que_ya_estan_completas():
+    """El lobby solo muestra las libres; para seguir una partida hacen falta
+    todas."""
+    j1, sesion, _, _ = _mesa_lista()
+    id_mesa = j1.ver(sesion)["id_partida"]
+
+    libres = [mesa["id_partida"] for mesa in j1.listar_partidas()]
+    todas = {mesa["id_mesa"]: mesa for mesa in j1.listar_mesas()["mesas"]}
+
+    assert id_mesa not in libres, "ya tiene dos jugadores"
+    assert id_mesa in todas
+    assert todas[id_mesa]["estado"] == "en_juego"
+    assert todas[id_mesa]["jugadores"] == ["ana", "beto"]
+
+
+def test_el_historial_cuenta_las_jugadas_en_orden_con_su_lamport():
+    j1, sesion_1, j2, sesion_2 = _mesa_lista()
+    id_mesa = j1.ver(sesion_1)["id_partida"]
+    vista = j1.ver(sesion_1)
+    quien, sesion = (j1, sesion_1) if vista["es_mi_turno"] else (j2, sesion_2)
+    quien.jugar_carta(sesion, quien.ver(sesion)["mis_cartas"][0], _id())
+
+    historial = j1.historial(id_mesa)
+    operaciones = [renglon["operacion"] for renglon in historial["renglones"]]
+    sellos = [renglon["lamport"] for renglon in historial["renglones"]]
+
+    assert operaciones[0].startswith("crea la mesa")
+    assert operaciones[-1].startswith("tira ")
+    assert sellos == sorted(sellos)
+    assert historial["id_mesa"] == id_mesa
+
+
+def test_un_backup_contesta_el_historial_aunque_no_atienda_el_juego():
+    """Es observabilidad, no una lectura del juego: poder pedirle el mismo log a
+    un backup es lo que muestra que la replica anda."""
+    daemon = Pyro5.api.Daemon(host="127.0.0.1", port=0)
+    backup = ServidorTruco(id_nodo=1, puntos=15, primario=3)
+    uri = daemon.register(backup, NOMBRE_OBJETO)
+    threading.Thread(target=daemon.requestLoop, daemon=True).start()
+
+    # el primario le replica la mesa: el backup aplica las ops, no las pide
+    backup._atiendo_puesta_al_dia([
+        {"seq": 1, "epoca": 0, "lamport": 3, "tipo": "crear", "id_sesion": "s1",
+         "id_operacion": "s1",
+         "datos": {"nombre": "ana", "id_mesa": "abc123", "semilla": 7, "puntos": 15}},
+        {"seq": 2, "epoca": 0, "lamport": 6, "tipo": "unirse", "id_sesion": "s2",
+         "id_operacion": "s2", "datos": {"nombre": "beto", "id_mesa": "abc123"}},
+    ])
+
+    try:
+        with Pyro5.api.Proxy(uri) as proxy:
+            try:
+                proxy.ver("s1")
+            except NoPrimario:
+                pass
+            else:
+                assert False, "un backup no atiende el juego"
+
+            historial = proxy.historial("abc123")
+            assert historial["rol"] == "backup" and historial["ultimo_seq"] == 2
+            assert [r["quien"] for r in historial["renglones"]] == ["ana", "beto"]
+            assert [m["id_mesa"] for m in proxy.listar_mesas()["mesas"]] == ["abc123"]
+    finally:
+        daemon.shutdown()

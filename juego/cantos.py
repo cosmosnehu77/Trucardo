@@ -19,7 +19,7 @@ class Canto(Enum):
         return self.value.replace("_", " ")
 
 
-# Cada canto solo sube al siguiente de su escala.
+# El truco sube de a uno. Los envidos se encadenan: ver subas_del_envido.
 ESCALA_ENVIDO = (Canto.ENVIDO, Canto.REAL_ENVIDO, Canto.FALTA_ENVIDO)
 ESCALA_TRUCO = (Canto.TRUCO, Canto.RETRUCO, Canto.VALE_CUATRO)
 
@@ -33,12 +33,9 @@ PUNTOS_QUERIDO = {
     Canto.VALE_CUATRO: 4,
 }
 
-# Si el rival no quiere. En el truco se cobra lo que ya estaba en juego; los
-# envidos no se encadenan, asi que cualquiera no querido vale 1.
+# Si el rival no quiere el truco se cobra lo que ya estaba en juego. El no
+# querido del envido sale de la cadena, no de una tabla.
 PUNTOS_NO_QUERIDO = {
-    Canto.ENVIDO: 1,
-    Canto.REAL_ENVIDO: 1,
-    Canto.FALTA_ENVIDO: 1,
     Canto.TRUCO: 1,
     Canto.RETRUCO: 2,
     Canto.VALE_CUATRO: 3,
@@ -46,7 +43,25 @@ PUNTOS_NO_QUERIDO = {
 
 
 def siguiente(canto: Canto):
-    """El canto que sube la apuesta, o None si es el ultimo de la escala."""
-    escala = ESCALA_ENVIDO if canto.es_de_envido else ESCALA_TRUCO
-    posicion = escala.index(canto)
-    return escala[posicion + 1] if posicion + 1 < len(escala) else None
+    """El canto que sube el truco, o None si es el ultimo de la escala."""
+    posicion = ESCALA_TRUCO.index(canto)
+    return ESCALA_TRUCO[posicion + 1] if posicion + 1 < len(ESCALA_TRUCO) else None
+
+
+def subas_del_envido(cadena):
+    """Que se puede cantar sobre los envidos ya cantados en esta mano. El
+    envido se repite una sola vez, y solo mientras no haya real ni falta."""
+    if Canto.FALTA_ENVIDO in cadena:
+        return ()
+    if Canto.REAL_ENVIDO in cadena:
+        return (Canto.FALTA_ENVIDO,)
+    if cadena.count(Canto.ENVIDO) >= 2:
+        return (Canto.REAL_ENVIDO, Canto.FALTA_ENVIDO)
+    return ESCALA_ENVIDO
+
+
+def acumulado(cadena):
+    """Lo que suman los envidos de la cadena si los quieren. La falta envido no
+    suma: vale lo que le falta al puntero, y eso lo sabe la Partida."""
+    return sum(PUNTOS_QUERIDO[canto] for canto in cadena
+               if canto is not Canto.FALTA_ENVIDO)

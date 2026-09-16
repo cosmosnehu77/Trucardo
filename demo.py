@@ -17,13 +17,19 @@ def turno_del_bot(partida, azar):
     """Hace una jugada legal cualquiera y devuelve como se describe."""
     jugador = partida.turno
 
+    posibles = [canto for canto in Canto if partida.puede_cantar(jugador, canto)]
+
     if partida.apuesta.pendiente is not None:
         _, canto = partida.apuesta.pendiente
+        # contestar tambien puede ser subir: asi se prueban las cadenas
+        if posibles and azar.random() < 0.3:
+            suba = azar.choice(posibles)
+            partida.cantar(jugador, suba)
+            return f"{NOMBRE[jugador]} sube a {str(suba).upper()}"
         quiere = azar.random() < 0.65
         partida.responder(jugador, quiere)
         return f"{NOMBRE[jugador]} dice {'QUIERO' if quiere else 'NO QUIERO'} al {canto}"
 
-    posibles = [canto for canto in Canto if partida.puede_cantar(jugador, canto)]
     if posibles and azar.random() < 0.25:
         canto = azar.choice(posibles)
         partida.cantar(jugador, canto)

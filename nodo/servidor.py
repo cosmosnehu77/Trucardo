@@ -18,6 +18,7 @@ from nodo import config, registro
 from nodo.cluster.protocolo import AL_DIA, ATRASADO, DUPLICADA, ILEGAL
 from nodo.errores import NoPrimario
 from nodo.estado import EstadoServicio
+from nodo.historial import armar_historial, resumir_mesas
 from nodo.lamport import Reloj
 from nodo.cluster import Membresia
 from nodo.registro import log
@@ -104,6 +105,29 @@ class ServidorTruco:
                             key=lambda mesa: (mesa.creada_en, mesa.id))
             return [{"id_partida": mesa.id, "creada_por": mesa.nombres.get(1)}
                     for mesa in libres]
+
+    # ---------- seguir una partida desde afuera ----------
+
+    def listar_mesas(self, lamport=0):
+        """Todas las mesas, no solo las que esperan rival: para elegir cual
+        seguir."""
+        with self.lock:
+            self.reloj.recibir(lamport)
+            return {"mesas": resumir_mesas(self.estado),
+                    "nodo": self.id_nodo, **self._quien()}
+
+    def historial(self, id_mesa, desde=0, lamport=0):
+        """El log de una mesa, renglon por renglon.
+
+        Lo contesta cualquier nodo, y no solo el primario como el resto de las
+        lecturas: no alimenta ninguna decision del juego, es observabilidad como
+        quien_es_primario(). Y pedirle el mismo log a un backup es justamente lo
+        que muestra que la replicacion anda.
+        """
+        with self.lock:
+            self.reloj.recibir(lamport)
+            return {**armar_historial(self.estado, id_mesa, desde),
+                    "nodo": self.id_nodo, **self._quien()}
 
     def _id_mesa_libre(self):
         """Seis letras al azar que no use otra mesa."""

@@ -4,7 +4,9 @@ conecta a nada hasta la primera llamada."""
 import threading
 
 import Pyro5.api
+from rich.console import Console
 
+from cliente import pantalla
 from cliente.cliente import Cliente
 from nodo import config
 from nodo.servidor import NOMBRE_OBJETO, ServidorTruco
@@ -46,9 +48,17 @@ def test_en_el_turno_normal_estan_las_cartas_los_cantos_y_el_mazo():
 
 
 def test_al_contestar_un_canto_tambien_se_puede_ir_al_mazo():
-    vista = _vista(canto_pendiente={"quien": "rival", "canto": "truco"})
+    vista = _vista(canto_pendiente={"quien": "rival", "canto": "truco"}, cantos_posibles=[])
     teclas = [accion.tecla for accion in _cliente().acciones(vista)]
     assert teclas == ["q", "n", "m"]
+
+
+def test_al_contestar_un_envido_tambien_se_puede_subirlo():
+    """Con la cadena de envido, el que contesta puede responder o subir."""
+    vista = _vista(canto_pendiente={"quien": "rival", "canto": "envido"},
+                   cantos_posibles=["real_envido", "falta_envido"])
+    teclas = [accion.tecla for accion in _cliente().acciones(vista)]
+    assert teclas == ["q", "n", "r", "f", "m"]
 
 
 # --- llegar al nodo ---
@@ -100,3 +110,11 @@ def test_solo_se_muestran_los_eventos_que_no_se_vieron():
     cliente._visto = 1
     vista = _vista(eventos=[{"n": 1}, {"n": 2}, {"n": 3}])
     assert [evento["n"] for evento in cliente._nuevos(vista)] == [2, 3]
+
+
+def test_el_cartel_del_envido_nombra_la_cadena_y_aparta_los_puntos():
+    evento = {"ganador": "yo", "puntos": 7, "querido": False,
+              "cadena": ["envido", "envido", "real envido"]}
+    consola = Console(record=True, width=100)
+    consola.print(pantalla.resultado_envido(evento, {"rival": "beto"}))
+    assert "GANASTE el ENVIDO + ENVIDO + REAL ENVIDO  ·  +7" in consola.export_text()

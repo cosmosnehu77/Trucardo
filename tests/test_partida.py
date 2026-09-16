@@ -18,6 +18,10 @@ def partida_armada(cartas_j1, cartas_j2, el_mano=J1, puntos=None):
 GANA_J1 = ([Carta(1, E), Carta(1, B), Carta(7, E)],
            [Carta(4, C), Carta(5, C), Carta(6, C)])
 
+# J1 tiene 33 de envido y J2 tiene 0
+ENVIDO_J1 = ([Carta(7, O), Carta(6, O), Carta(1, C)],
+             [Carta(10, E), Carta(11, C), Carta(12, B)])
+
 
 def jugar_mano_entera(partida):
     """Tira cartas hasta que termina la mano en curso o la partida."""
@@ -291,6 +295,122 @@ def test_no_se_puede_cantar_envido_dos_veces():
         raise AssertionError("el envido se juega una vez por mano")
 
 
+# --- la cadena de envido ---
+
+def cantar_cadena(partida, cantos, arranca=J1):
+    """Los cantos se van alternando: cada uno lo sube el que tenia que
+    contestar. Devuelve el ultimo que canto."""
+    jugador = arranca
+    for canto in cantos:
+        partida.cantar(jugador, canto)
+        jugador = rival(jugador)
+    return rival(jugador)
+
+
+def test_la_cadena_querida_suma_todos_sus_cantos():
+    casos = [([Canto.ENVIDO], 2),
+             ([Canto.ENVIDO, Canto.ENVIDO], 4),
+             ([Canto.ENVIDO, Canto.REAL_ENVIDO], 5),
+             ([Canto.ENVIDO, Canto.ENVIDO, Canto.REAL_ENVIDO], 7)]
+    for cantos, esperado in casos:
+        partida = partida_armada(*ENVIDO_J1)
+        ultimo = cantar_cadena(partida, cantos)
+        partida.responder(rival(ultimo), quiere=True)
+        assert partida.puntos[J1] == esperado, [str(canto) for canto in cantos]
+
+
+def test_la_cadena_no_querida_vale_lo_acumulado_antes_del_ultimo_canto():
+    """Y la cobra el que canto ultimo, no el que abrio la cadena."""
+    casos = [([Canto.ENVIDO], 1),
+             ([Canto.ENVIDO, Canto.ENVIDO], 2),
+             ([Canto.ENVIDO, Canto.REAL_ENVIDO], 2),
+             ([Canto.ENVIDO, Canto.ENVIDO, Canto.REAL_ENVIDO], 4)]
+    for cantos, esperado in casos:
+        partida = partida_armada(*ENVIDO_J1)
+        ultimo = cantar_cadena(partida, cantos)
+        partida.responder(rival(ultimo), quiere=False)
+        assert partida.puntos[ultimo] == esperado, [str(canto) for canto in cantos]
+        assert partida.numero_mano == 1, "el envido no querido no corta la mano"
+
+
+def test_la_falta_envido_sobre_una_cadena_vale_lo_que_falta_igual():
+    """La falta no se suma a lo acumulado: lo reemplaza."""
+    partida = partida_armada(*ENVIDO_J1, puntos={J1: 0, J2: 18})
+    ultimo = cantar_cadena(partida, [Canto.ENVIDO, Canto.ENVIDO, Canto.FALTA_ENVIDO])
+    partida.responder(rival(ultimo), quiere=True)
+    assert partida.puntos[J1] == 30 - 18
+
+
+def test_el_envido_no_se_repite_tres_veces_ni_baja_la_escala():
+    partida = partida_armada(*ENVIDO_J1)
+    cantar_cadena(partida, [Canto.ENVIDO, Canto.ENVIDO])
+    try:
+        partida.cantar(J1, Canto.ENVIDO)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("el envido se sube dos veces como mucho")
+
+    partida = partida_armada(*ENVIDO_J1)
+    partida.cantar(J1, Canto.REAL_ENVIDO)
+    try:
+        partida.cantar(J2, Canto.ENVIDO)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("despues del real envido no se vuelve al envido")
+
+
+def test_el_envido_esta_primero():
+    """A un truco se le puede contestar envido: se cobra el envido y recien
+    despues el truco vuelve a esperar su respuesta."""
+    partida = partida_armada(*ENVIDO_J1)
+    partida.cantar(J1, Canto.TRUCO)
+    partida.cantar(J2, Canto.ENVIDO)
+    partida.responder(J1, quiere=True)
+
+    assert partida.puntos == {J1: 2, J2: 0}, "el envido se cobra primero"
+    assert partida.apuesta.pendiente == (J1, Canto.TRUCO), "el truco sigue esperando"
+
+    partida.responder(J2, quiere=True)
+    assert partida.apuesta.truco is Canto.TRUCO and partida.apuesta.puntos == 2
+
+
+def test_con_un_envido_sin_responder_no_se_canta_truco():
+    partida = partida_armada(*ENVIDO_J1)
+    partida.cantar(J1, Canto.ENVIDO)
+    try:
+        partida.cantar(J2, Canto.TRUCO)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("primero se contesta el envido")
+
+
+def test_con_el_truco_querido_ya_no_va_el_envido():
+    partida = partida_armada(*ENVIDO_J1)
+    partida.cantar(J1, Canto.TRUCO)
+    partida.responder(J2, quiere=True)
+    try:
+        partida.cantar(J1, Canto.ENVIDO)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("querido el truco, el envido ya no va")
+
+
+def test_irse_al_mazo_con_la_pila_cobra_el_envido_y_despues_la_mano():
+    partida = partida_armada(*ENVIDO_J1)
+    partida.cantar(J1, Canto.TRUCO)
+    cantar_cadena(partida, [Canto.ENVIDO, Canto.ENVIDO], arranca=J2)
+    partida.irse_al_mazo(J2)
+
+    # 2 del envido no querido, 1 de la mano: el truco de abajo nunca fue querido
+    assert partida.puntos == {J1: 3, J2: 0}
+    assert [evento["tipo"] for evento in partida.eventos] == ["envido", "mano"]
+    assert partida.numero_mano == 2
+
+
 # --- irse al mazo ---
 
 def test_irse_al_mazo_le_da_los_puntos_al_rival():
@@ -418,8 +538,8 @@ def test_el_envido_querido_anota_ganador_puntos_y_tantos():
     partida.cantar(J1, Canto.ENVIDO)
     partida.responder(J2, quiere=True)
     assert partida.eventos == [{"n": 1, "tipo": "envido", "ganador": J1, "puntos": 2,
-                                "canto": Canto.ENVIDO, "querido": True,
-                                "tantos": {J1: 33, J2: 0}}]
+                                "canto": Canto.ENVIDO, "cadena": [Canto.ENVIDO],
+                                "querido": True, "tantos": {J1: 33, J2: 0}}]
 
 
 def test_el_envido_no_querido_se_anota_sin_tantos():

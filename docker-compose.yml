@@ -1,0 +1,60 @@
+# Una compu:     docker compose up --build
+# Varias compus: .env con las IPs (ver .env.ejemplo) y en cada una
+#                docker compose up --build nodoN
+# Jugar:         docker compose run --rm cliente <nombre>
+name: trucardo
+
+x-app: &app
+  build: .
+  image: trucardo:local
+  environment:
+    # sin .env, los nombres de servicio; con .env, las IPs de cada compu
+    TRUCARDO_NODOS: "1@${IP_NODO1:-nodo1}:9501:9601,2@${IP_NODO2:-nodo2}:9502:9602,3@${IP_NODO3:-nodo3}:9503:9603"
+    PUNTOS: ${PUNTOS:-15}
+    LOG_NIVEL: ${LOG_NIVEL:-INFO}
+
+x-nodo: &nodo
+  <<: *app
+  restart: "no"     # si lo matan queda muerto hasta docker compose start
+
+x-herramienta: &herramienta
+  <<: *app
+  profiles: [herramientas]     # no arrancan con up: se usan con run
+
+services:
+  nodo1:
+    <<: *nodo
+    command: ["python", "-m", "nodo.servidor", "1"]
+    ports: ["9501:9501", "9601:9601"]
+
+  nodo2:
+    <<: *nodo
+    command: ["python", "-m", "nodo.servidor", "2"]
+    ports: ["9502:9502", "9602:9602"]
+
+  nodo3:
+    <<: *nodo
+    command: ["python", "-m", "nodo.servidor", "3"]
+    ports: ["9503:9503", "9603:9603"]
+
+  cliente:
+    <<: *herramienta
+    entrypoint: ["python", "-m", "cliente.cliente"]
+    stdin_open: true
+    tty: true
+
+  quien_es:
+    <<: *herramienta
+    entrypoint: ["python", "-m", "cliente.quien_es"]
+
+  historial:
+    <<: *herramienta
+    entrypoint: ["python", "-m", "cliente.historial"]
+
+  tests:
+    <<: *herramienta
+    entrypoint: ["python", "run_tests.py"]
+
+  demo:
+    <<: *herramienta
+    entrypoint: ["python", "demo.py"]

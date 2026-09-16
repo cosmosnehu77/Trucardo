@@ -73,20 +73,20 @@ class Cliente:
     # ---------- que puede hacer ----------
 
     def acciones(self, vista):
-        """El menu, armado con lo que dice el servidor."""
+        """El menu, armado con lo que dice el servidor. Contestando un canto
+        tambien se puede subir la apuesta: eso lo decide cantos_posibles."""
         if vista["canto_pendiente"] and vista["canto_pendiente"]["quien"] == "rival":
-            # irse al mazo tambien contesta: vale como no quiero
-            return [Accion("q", "QUIERO", "responder", True),
-                    Accion("n", "NO QUIERO", "responder", False),
-                    Accion("m", "irme al mazo", "mazo", None)]
-
-        acciones = [Accion(str(i), f"tirar {naipe[0]} de {naipe[1]}", "jugar", naipe)
-                    for i, naipe in enumerate(vista["mis_cartas"], 1)]
+            acciones = [Accion("q", "QUIERO", "responder", True),
+                        Accion("n", "NO QUIERO", "responder", False)]
+        else:
+            acciones = [Accion(str(i), f"tirar {naipe[0]} de {naipe[1]}", "jugar", naipe)
+                        for i, naipe in enumerate(vista["mis_cartas"], 1)]
 
         for canto in vista["cantos_posibles"]:
             acciones.append(Accion(TECLAS.get(canto, canto[0]),
                                    canto.replace("_", " ").upper(), "cantar", canto))
 
+        # irse al mazo tambien contesta: vale como no quiero
         acciones.append(Accion("m", "irme al mazo", "mazo", None))
         return acciones
 

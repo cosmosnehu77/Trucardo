@@ -2,7 +2,7 @@
 # que canto es legal. En cada reparto se crean de nuevo la Mano y la Apuesta.
 
 from juego.apuesta import Apuesta
-from juego.cantos import PUNTOS_NO_QUERIDO, PUNTOS_QUERIDO, Canto
+from juego.cantos import (PUNTOS_NO_QUERIDO, Canto, acumulado, subas_del_envido)
 from juego.jugadores import rival
 from juego.mano import Mano
 from juego.mazo import repartir
@@ -47,6 +47,26 @@ class Partida:
             return rival(self.apuesta.pendiente[0])
         return self.mano.turno
 
+    @property
+    def envido_en_juego(self):
+        """La cadena de envido sin responder y cuanto vale, o None. Va a la
+        vista para que el cliente no calcule nada."""
+        cadena = self.apuesta.cadena_envido
+        if not cadena:
+            return None
+        return {"cantos": [str(canto) for canto in cadena],
+                "quiero": self._puntos_envido(cadena, True),
+                "no_quiero": self._puntos_envido(cadena, False)}
+
+    @property
+    def truco_esperando(self):
+        """El truco que quedo abajo de la cadena de envido, o None."""
+        if self.apuesta.cadena_envido and self.apuesta.pila:
+            cantor, canto = self.apuesta.pila[0]
+            if not canto.es_de_envido:
+                return canto
+        return None
+
     def cartas_de(self, jugador):
         return tuple(self.mano.cartas[jugador])
 
@@ -77,7 +97,7 @@ class Partida:
 
     def cantar(self, jugador, canto):
         self._verificar_canto(jugador, canto)
-        self.apuesta.pendiente = (jugador, canto)
+        self.apuesta.cantar(jugador, canto)
 
     def puede_cantar(self, jugador, canto):
         """Usa la misma verificacion que cantar(), asi no se desincronizan."""
@@ -91,34 +111,53 @@ class Partida:
         """ValueError con el motivo si el canto no va."""
         if self.terminada:
             raise ValueError("la partida ya termino")
-        if self.apuesta.pendiente is not None:
-            raise ValueError(f"ya hay un {self.apuesta.pendiente[1]} sin responder")
-
         if canto.es_de_envido:
-            self._verificar_turno(jugador)
-            # Vale en toda la primera ronda: mano.rondas se llena recien
-            # cuando tiraron los dos.
-            if self.apuesta.envido_resuelto or self.mano.rondas:
-                raise ValueError("el envido solo se canta en la primera ronda")
+            self._verificar_envido(jugador, canto)
+        else:
+            self._verificar_truco(jugador, canto)
 
-        elif self.apuesta.truco is None:
+    def _verificar_envido(self, jugador, canto):
+        """El envido lo canta el que tiene el turno, que con un canto sin
+        responder es el que tiene que contestar: por eso se puede contestar un
+        truco con envido y por eso los envidos se encadenan."""
+        self._verificar_turno(jugador)
+        # Vale en toda la primera ronda: mano.rondas se llena recien cuando
+        # tiraron los dos.
+        if self.apuesta.envido_resuelto or self.mano.rondas:
+            raise ValueError("el envido solo se canta en la primera ronda")
+        if self.apuesta.truco is not None:
+            raise ValueError(f"con el {self.apuesta.truco} querido ya no va el envido")
+
+        cadena = self.apuesta.cadena_envido
+        subas = subas_del_envido(cadena)
+        if canto not in subas:
+            if not subas:
+                raise ValueError(f"{cadena[-1]} es el techo del envido")
+            raise ValueError(f"despues de {cadena[-1]} solo se puede cantar "
+                             + " o ".join(str(suba) for suba in subas))
+
+    def _verificar_truco(self, jugador, canto):
+        if self.apuesta.pendiente is not None:
+            raise ValueError(f"primero hay que responder a {self.apuesta.pendiente[1]}")
+
+        if self.apuesta.truco is None:
             self._verificar_turno(jugador)
             if canto is not Canto.TRUCO:
                 raise ValueError(f"no se puede cantar {canto} sin truco antes")
+            return
 
-        else:
-            # Sube el que quiso el canto anterior, no el que tiene el turno.
-            if jugador != self.apuesta.puede_subir:
-                raise ValueError(
-                    f"solo el jugador {self.apuesta.puede_subir} puede subir la apuesta, "
-                    f"quiso el {self.apuesta.truco}"
-                )
-            if self.apuesta.suba is None:
-                raise ValueError(f"{self.apuesta.truco} es el techo, no se puede subir mas")
-            if canto is not self.apuesta.suba:
-                raise ValueError(
-                    f"despues de {self.apuesta.truco} solo se puede cantar {self.apuesta.suba}"
-                )
+        # Sube el que quiso el canto anterior, no el que tiene el turno.
+        if jugador != self.apuesta.puede_subir:
+            raise ValueError(
+                f"solo el jugador {self.apuesta.puede_subir} puede subir la apuesta, "
+                f"quiso el {self.apuesta.truco}"
+            )
+        if self.apuesta.suba is None:
+            raise ValueError(f"{self.apuesta.truco} es el techo, no se puede subir mas")
+        if canto is not self.apuesta.suba:
+            raise ValueError(
+                f"despues de {self.apuesta.truco} solo se puede cantar {self.apuesta.suba}"
+            )
 
     # --- responder ---
 
@@ -128,36 +167,43 @@ class Partida:
         self._verificar_turno(jugador)
 
         cantor, canto = self.apuesta.pendiente
-        self.apuesta.pendiente = None
-
-        if not quiere:
-            self._no_quiero(cantor, canto)
-        elif canto.es_de_envido:
-            self._envido_querido(canto)
-        else:
-            self.apuesta.querer_truco(jugador, canto)
-
-    def _no_quiero(self, cantor, canto):
-        puntos = PUNTOS_NO_QUERIDO[canto]
         if canto.es_de_envido:
-            # el envido no querido no corta la mano
-            self.apuesta.envido_resuelto = True
-            self._anotar("envido", ganador=cantor, puntos=puntos, canto=canto, querido=False)
-            self._sumar(cantor, puntos)
+            self._resolver_envido(quiere)
+        elif quiere:
+            self.apuesta.pila.pop()
+            self.apuesta.querer_truco(jugador, canto)
         else:
-            self._terminar_mano(cantor, puntos, "no_quiso", canto=canto)
+            self.apuesta.pila.pop()
+            self._terminar_mano(cantor, PUNTOS_NO_QUERIDO[canto], "no_quiso", canto=canto)
 
-    def _envido_querido(self, canto):
-        if canto is Canto.FALTA_ENVIDO:
-            # lo que le falta al que va ganando
-            puntos = self.puntos_para_ganar - max(self.puntos.values())
-        else:
-            puntos = PUNTOS_QUERIDO[canto]
+    def _resolver_envido(self, quiere):
+        """Contestar un envido resuelve la cadena entera. No corta la mano."""
+        cadena = self.apuesta.sacar_envidos()
+        ultimo_cantor, _ = cadena[-1]
+        cantos = [canto for _, canto in cadena]
+
+        puntos = self._puntos_envido(cantos, quiere)
         self.apuesta.envido_resuelto = True
-        ganador = self.mano.ganador_envido()
-        self._anotar("envido", ganador=ganador, puntos=puntos, canto=canto, querido=True,
-                     tantos={1: self.mano.envido(1), 2: self.mano.envido(2)})
+        datos = {}
+        if quiere:
+            ganador = self.mano.ganador_envido()
+            datos["tantos"] = {1: self.mano.envido(1), 2: self.mano.envido(2)}
+        else:
+            ganador = ultimo_cantor
+
+        self._anotar("envido", ganador=ganador, puntos=puntos, canto=cantos[-1],
+                     cadena=cantos, querido=quiere, **datos)
         self._sumar(ganador, puntos)
+
+    def _puntos_envido(self, cadena, quiere):
+        """Querido vale toda la cadena; no querido, lo acumulado ANTES del
+        ultimo canto y nunca menos de 1."""
+        if not quiere:
+            return acumulado(cadena[:-1]) or 1
+        if cadena[-1] is Canto.FALTA_ENVIDO:
+            # lo que le falta al que va ganando
+            return self.puntos_para_ganar - max(self.puntos.values())
+        return acumulado(cadena)
 
     # --- irse al mazo ---
 
@@ -166,13 +212,17 @@ class Partida:
         vale ademas como no quiero a ese canto."""
         self._verificar_turno(jugador)
 
-        if self.apuesta.pendiente is not None:
-            cantor, canto = self.apuesta.pendiente
-            self.apuesta.pendiente = None
-            self._no_quiero(cantor, canto)
-            if not canto.es_de_envido:
-                return
+        pendiente = self.apuesta.pendiente
+        if pendiente is not None and pendiente[1].es_de_envido:
+            self._resolver_envido(quiere=False)
+        elif pendiente is not None:
+            cantor, canto = self.apuesta.pila.pop()
+            self._terminar_mano(cantor, PUNTOS_NO_QUERIDO[canto], "no_quiso", canto=canto)
+            return
 
+        # El truco que queda debajo de un envido nunca fue querido, asi que la
+        # mano vale lo mismo que si no lo hubieran cantado.
+        self.apuesta.pila.clear()
         self._terminar_mano(rival(jugador), self.apuesta.puntos, "mazo")
 
     # --- cierre ---

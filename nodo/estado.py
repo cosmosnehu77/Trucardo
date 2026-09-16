@@ -48,6 +48,9 @@ class Mesa:
         self.creada_en = creada_en      # sello de Lamport de la op que la creo
         self.nombres = {}               # 1 o 2 -> nombre
         self.partida = None
+        # seq -> que cerro esa op y como quedo el marcador. Sale de aplicar las
+        # ops, asi que es igual en todos los nodos. Lo lee historial.py.
+        self.cierres = {}
 
     @property
     def completa(self):
@@ -78,7 +81,11 @@ class EstadoServicio:
             mesa = self.mesa(sesion.id_mesa)
             if mesa.partida is None:
                 raise ValueError("todavia falta que se sume el rival")
+            antes = len(mesa.partida.eventos)
             ACCIONES[tipo](mesa.partida, sesion.jugador, datos)
+            if len(mesa.partida.eventos) > antes:
+                mesa.cierres[op["seq"]] = {"eventos": mesa.partida.eventos[antes:],
+                                           "puntos": dict(mesa.partida.puntos)}
         else:
             raise ValueError(f"tipo de operacion desconocido: {tipo!r}")
 

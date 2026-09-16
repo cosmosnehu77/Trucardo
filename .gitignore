@@ -12,3 +12,6 @@ ruff.toml
 
 #carpeta de devs
 proj/
+
+# variables de docker compose por compu
+.env

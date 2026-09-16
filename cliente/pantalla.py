@@ -32,7 +32,7 @@ def dibujar(consola, vista):
     if vista["rondas"]:
         consola.print(mesa(vista))
     consola.print(mis_cartas(vista))
-    if vista["apuesta_truco"] or vista["canto_pendiente"]:
+    if vista["apuesta_truco"] or vista["canto_pendiente"] or vista["envido_en_juego"]:
         consola.print(apuestas(vista))
 
 
@@ -135,7 +135,20 @@ def apuestas(vista):
         canto = vista["canto_pendiente"]
         quien = "vos" if canto["quien"] == "yo" else vista["rival"]
         lineas.append(Text(f"{quien} canto {canto['canto'].upper()}", style="bold red"))
+    if vista["envido_en_juego"]:
+        envido = vista["envido_en_juego"]
+        lineas.append(Text(f"{cadena(envido['cantos'])}  ·  "
+                           f"{envido['quiero']} si lo quieren, {envido['no_quiero']} si no",
+                           style="bold magenta"))
+    if vista["truco_esperando"]:
+        lineas.append(Text(f"el {vista['truco_esperando'].upper()} espera su respuesta",
+                           style="dim yellow"))
     return Panel(Group(*lineas), border_style="yellow")
+
+
+def cadena(cantos):
+    """"envido + envido + real envido"."""
+    return " + ".join(canto.upper() for canto in cantos)
 
 
 def menu(acciones):
@@ -183,8 +196,8 @@ def _cartel(texto, gane, detalle=None, titulo=None):
 
 def resultado_envido(evento, vista):
     gane = evento["ganador"] == "yo"
-    canto = evento["canto"].upper()
-    texto = "GANASTE el "+canto+" + "+f"{evento['puntos']}" if gane else "PERDISTE el "+canto
+    canto = cadena(evento["cadena"])
+    texto = "GANASTE el "+canto+"  ·  +"+f"{evento['puntos']}" if gane else "PERDISTE el "+canto
 
     if evento["querido"]:
         tantos = evento["tantos"]

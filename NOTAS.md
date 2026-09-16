@@ -18,8 +18,9 @@ distribuida, no por cubrir todas las reglas del truco.
 Solo se va al mazo el que tiene el turno. Si lo que le tocaba era contestar un
 canto, irse al mazo vale como **no quiero** a ese canto:
 
-- A un envido: el que cantó cobra el envido no querido y además se lleva la
-  mano, como en cualquier ida al mazo.
+- A un envido: se resuelve la cadena entera como no querida (la cobra el que
+  cantó último) y además el rival se lleva la mano, como en cualquier ida al
+  mazo.
 - A un truco, retruco o vale cuatro: es exactamente un no quiero, que ya corta
   la mano.
 
@@ -27,30 +28,43 @@ Por eso el cliente ofrece la `m` también cuando hay que responder.
 
 ---
 
-## Pendiente: la pila de cantos
+## Resuelto: la pila de cantos
 
-Dos reglas necesitan que un canto quede "abajo" esperando mientras se resuelve
-otro, y hoy el motor tiene un solo `Apuesta.pendiente`.
+`Apuesta` tenía un solo casillero para el canto sin responder, y eso dejaba
+afuera dos reglas. Ahora tiene una **pila**: el canto de abajo espera mientras
+se resuelve el de arriba.
+
+```
+J1: truco                 pila = [(J1, TRUCO)]
+J2: envido                pila = [(J1, TRUCO), (J2, ENVIDO)]
+J1: envido                pila = [(J1, TRUCO), (J2, ENVIDO), (J1, ENVIDO)]
+J2: real envido           pila = [..., (J2, REAL_ENVIDO)]
+J1: quiero                se resuelve la CADENA entera: 2 + 2 + 3 = 7
+                          pila = [(J1, TRUCO)]      <- vuelve a esperar
+J2: quiero                truco querido, la mano vale 2
+```
+
+**Invariante:** la pila tiene a lo sumo un canto del truco, y siempre abajo;
+arriba solo una cadena de envidos. Lo sostienen dos reglas de
+`_verificar_canto`: con un envido sin responder no se puede cantar truco, y con
+el truco ya querido no va más envido. Gracias a eso `responder()` sabe siempre a
+qué le contesta (a la cima), y el truco que queda debajo de un envido nunca fue
+querido, así que vale 1 se resuelva como se resuelva.
+
+Quien canta es siempre "el del turno", y `Partida.turno` con la pila cargada
+devuelve **el que tiene que contestar**. De ahí sale gratis que el envido se
+encadene y que se pueda contestar un truco con envido.
 
 ### "El envido está primero"
 
 Si en la **primera** ronda alguien canta TRUCO, el rival puede contestar ENVIDO
-en lugar de quiero / no quiero. Ahí el envido se juega y se cobra ANTES, y
-recién después el truco vuelve a quedar esperando su respuesta.
+en lugar de quiero / no quiero. El envido se juega y se cobra antes, y recién
+después el truco vuelve a quedar esperando su respuesta.
 
-    J1: truco
-    J2: envido        <- en vez de responder el truco
-    J1: quiero        <- se resuelve el envido, se cobran los puntos
-    J2: quiero        <- recién ahora se responde el truco
+### Cadenas de envido
 
-Hoy no se puede: `_verificar_canto` en `juego/partida.py` corta antes con "ya
-hay un truco sin responder".
-
-### Encadenar envidos
-
-Los envidos se encadenan: "envido, envido", "envido, real envido", "envido,
-envido, real envido", y cualquier cadena puede terminar en falta envido. Lo
-querido se suma, y lo no querido vale lo acumulado **antes** del último canto:
+Lo querido se suma; lo no querido vale lo acumulado **antes** del último canto,
+nunca menos de 1, y lo cobra el que cantó último:
 
     cantos                          querido          no querido
     envido                          2                1
@@ -60,18 +74,19 @@ querido se suma, y lo no querido vale lo acumulado **antes** del último canto:
     envido, envido, real envido     7                4
     ..., falta envido               lo que falta     lo acumulado (o 1)
 
-Hoy cada envido se canta solo, porque un canto sin responder corta cualquier
-otro. Por eso el no querido de los tres vale 1 y sale de `PUNTOS_NO_QUERIDO`.
-Con la pila, el no querido del envido va a salir de la cadena.
+El envido se repite como máximo dos veces y solo mientras no haya real ni falta
+(`subas_del_envido` en `juego/cantos.py`). La falta envido no se suma: reemplaza
+a lo acumulado por lo que le falta al que va ganando, y es el techo.
 
-### Qué hace falta
+Por eso `PUNTOS_NO_QUERIDO` quedó solo con los cantos del truco: el no querido
+del envido sale de la cadena.
 
-Una **pila** de cantos (el truco o el primer envido quedan abajo esperando) en
-vez de un solo `Apuesta.pendiente`, que `responder()` sepa a cuál le está
-contestando, y que el envido acumule los puntos de la cadena.
+### Lo que no cambió
 
-Son de las reglas complicadas y no suman nada a la parte distribuida, así que
-quedan anotadas por si sobra tiempo después de la entrega.
+El formato de la op replicada. `responder` sigue viajando con `{"quiere": bool}`
+nada más: siempre se contesta la cima de la pila, y la pila es parte de la
+`Partida`, que es estado replicado. Dos nodos que aplican el mismo log llegan a
+la misma pila.
 
 ---
 

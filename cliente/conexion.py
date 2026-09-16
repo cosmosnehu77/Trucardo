@@ -25,6 +25,18 @@ class SinServicio(Exception):
     pass
 
 
+def preguntar(nodo, metodo, *args):
+    """Una llamada a UN nodo concreto, sin failover ni reintento: para las
+    herramientas que quieren saber que contesta cada uno. None si no contesta a
+    tiempo."""
+    try:
+        with Pyro5.api.Proxy(f"PYRO:{NOMBRE_OBJETO}@{nodo.host}:{nodo.puerto_pyro}") as proxy:
+            proxy._pyroTimeout = config.TIMEOUT_RPC
+            return getattr(proxy, metodo)(*args)
+    except (Pyro5.errors.PyroError, OSError):
+        return None
+
+
 class Conexion:
     def __init__(self, nodos, reloj,
                  timeout=config.TIMEOUT_RPC, reintento_total=config.REINTENTO_TOTAL):
