@@ -185,17 +185,6 @@ def test_no_se_puede_subir_mas_alla_del_vale_cuatro():
         raise AssertionError("el vale cuatro es el techo")
 
 
-def test_no_se_puede_cantar_dos_veces_sin_respuesta():
-    partida = partida_armada(*GANA_J1)
-    partida.cantar(J1, Canto.TRUCO)
-    try:
-        partida.cantar(J2, Canto.RETRUCO)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("hay un truco sin responder")
-
-
 # --- puntos del envido ---
 
 def test_envido_querido_lo_gana_el_que_tiene_mas():

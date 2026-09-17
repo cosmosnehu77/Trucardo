@@ -2,8 +2,9 @@
 # responder. Quien puede cantar que lo decide partida.py.
 #
 # Invariante de la pila: a lo sumo un canto del truco, y siempre abajo; arriba
-# solo la cadena de envidos. Lo sostienen dos reglas de _verificar_canto: con un
-# envido sin responder no se canta truco, y con el truco querido no va envido.
+# solo la cadena de envidos. Lo sostienen tres reglas de _verificar_canto: con un
+# envido sin responder no se canta truco, con el truco querido no va envido, y
+# subir un truco sin responder lo saca de la pila queriendolo.
 
 from juego.cantos import PUNTOS_QUERIDO, siguiente
 
@@ -50,6 +51,12 @@ class Apuesta:
     def querer_truco(self, jugador, canto):
         self.truco = canto
         self.puede_subir = jugador
+
+    def querer_pendiente(self, jugador):
+        """Saca el canto de arriba de la pila queriendolo: lo usan el quiero y
+        la suba, porque subir un canto sin responder es quererlo."""
+        _, canto = self.pila.pop()
+        self.querer_truco(jugador, canto)
 
     def __repr__(self):
         return f"Apuesta(truco={self.truco}, pila={self.pila})"

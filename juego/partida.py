@@ -2,7 +2,8 @@
 # que canto es legal. En cada reparto se crean de nuevo la Mano y la Apuesta.
 
 from juego.apuesta import Apuesta
-from juego.cantos import (PUNTOS_NO_QUERIDO, Canto, acumulado, subas_del_envido)
+from juego.cantos import (PUNTOS_NO_QUERIDO, Canto, acumulado, siguiente,
+                          subas_del_envido)
 from juego.jugadores import rival
 from juego.mano import Mano
 from juego.mazo import repartir
@@ -97,6 +98,8 @@ class Partida:
 
     def cantar(self, jugador, canto):
         self._verificar_canto(jugador, canto)
+        if not canto.es_de_envido and self.apuesta.pendiente is not None:
+            self.apuesta.querer_pendiente(jugador)      # subirlo es quererlo
         self.apuesta.cantar(jugador, canto)
 
     def puede_cantar(self, jugador, canto):
@@ -137,8 +140,15 @@ class Partida:
                              + " o ".join(str(suba) for suba in subas))
 
     def _verificar_truco(self, jugador, canto):
-        if self.apuesta.pendiente is not None:
-            raise ValueError(f"primero hay que responder a {self.apuesta.pendiente[1]}")
+        pendiente = self.apuesta.pendiente
+        if pendiente is not None and pendiente[1].es_de_envido:
+            raise ValueError(f"primero hay que responder a {pendiente[1]}")
+
+        if pendiente is not None:
+            # Subir un canto sin responder es contestarlo: lo hace el del turno.
+            self._verificar_turno(jugador)
+            self._verificar_suba(canto, pendiente[1])
+            return
 
         if self.apuesta.truco is None:
             self._verificar_turno(jugador)
@@ -146,18 +156,21 @@ class Partida:
                 raise ValueError(f"no se puede cantar {canto} sin truco antes")
             return
 
-        # Sube el que quiso el canto anterior, no el que tiene el turno.
+        # Ya contestado, sube el que lo quiso, no el que tiene el turno.
         if jugador != self.apuesta.puede_subir:
             raise ValueError(
                 f"solo el jugador {self.apuesta.puede_subir} puede subir la apuesta, "
                 f"quiso el {self.apuesta.truco}"
             )
-        if self.apuesta.suba is None:
-            raise ValueError(f"{self.apuesta.truco} es el techo, no se puede subir mas")
-        if canto is not self.apuesta.suba:
-            raise ValueError(
-                f"despues de {self.apuesta.truco} solo se puede cantar {self.apuesta.suba}"
-            )
+        self._verificar_suba(canto, self.apuesta.truco)
+
+    def _verificar_suba(self, canto, sobre):
+        """El truco sube de a uno y no se pasa del vale cuatro."""
+        suba = siguiente(sobre)
+        if suba is None:
+            raise ValueError(f"{sobre} es el techo, no se puede subir mas")
+        if canto is not suba:
+            raise ValueError(f"despues de {sobre} solo se puede cantar {suba}")
 
     # --- responder ---
 
@@ -170,8 +183,7 @@ class Partida:
         if canto.es_de_envido:
             self._resolver_envido(quiere)
         elif quiere:
-            self.apuesta.pila.pop()
-            self.apuesta.querer_truco(jugador, canto)
+            self.apuesta.querer_pendiente(jugador)
         else:
             self.apuesta.pila.pop()
             self._terminar_mano(cantor, PUNTOS_NO_QUERIDO[canto], "no_quiso", canto=canto)
