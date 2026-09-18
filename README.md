@@ -200,6 +200,8 @@ sigue vivo (y `down` no lo baja): `docker compose kill cliente`.
 
 ## 3. Levantar el servidor
 
+En caso de no querer utilizar Trucardo via Docker, se puede hacer directamente mediante la ejecución de los archivos .py. Tener en cuenta que de esta forma se tendrá que instalar los "requirements.txt".
+
 En una terminal:
 
 ```bash
@@ -529,35 +531,3 @@ Los cuatro archivos que conviene leer primero:
 | `nodo/estado.py` | qué se replica, la única función que lo cambia, y cómo se evita aplicar dos veces un pedido |
 | `nodo/vista.py` | qué ve cada jugador y qué nunca le llega |
 | `nodo/historial.py` | cómo se lee el log replicado como la crónica de una mesa |
-
-`NOTAS.md` tiene las decisiones de alcance y lo que quedó pendiente a propósito.
-
----
-
-## 9. Estado de los cinco requisitos
-
-El cluster de tres nodos replica, elige un primario nuevo cuando se cae el que
-había, y sigue andando aunque se caigan dos de los tres. Lo que falta está en
-cada fila y en los límites de abajo.
-
-| # | Requisito | Estado |
-|---|---|---|
-| 1 | Primario-backup | **Hecho.** Tres nodos: el primario atiende, y los backups contestan `NoPrimario` diciendo quién manda (`nodo/errores.py`). El cliente (`cliente/conexion.py`) encuentra solo al primario; si se cae, prueba los otros nodos, les hace caso cuando le dicen quién manda y reintenta el mismo pedido. El pedido en vuelo no se aplica dos veces: las jugadas llevan un `id_operacion`, y para crear una mesa o unirse el cliente propone su `id_sesion`. Si un pedido ya se aplicó, lo sabe el estado, que sale del log replicado, así que también lo sabe el primario nuevo. |
-| 2 | Comunicación | **Hecho.** Cliente ↔ nodo con Pyro5, sin name server, con la URI directa. Nodo ↔ nodo con TCP y un mensaje JSON por línea (`nodo/transporte.py`), con un timeout propio en cada envío: de eso depende decidir que un nodo se cayó. Por ahí viajan `LATIDO`, `QUIEN`, `ELECCION`, `COORDINADOR` y `REPLICA`. |
-| 3 | Replicación | **Parcial.** Cada pedido se convierte en una operación: un dict plano con todo resuelto (la semilla viaja en lugar de las 40 cartas; el mezclado es un Fisher-Yates que da el mismo mazo en cualquier versión de Python). `EstadoServicio.aplicar(op)`, en `nodo/estado.py`, es lo único que cambia el estado y es determinista: dos nodos que aplican el mismo log llegan al mismo estado. El primario aplica cada operación y se la manda a todos los backups (`REPLICA`) antes de contestarle al cliente; un backup solo la acepta del primario de la época actual. Un nodo atrasado, o uno que vuelve vacío, se pone al día solo: el primario le manda de una vez las operaciones que le faltan (`PUESTA_AL_DIA`). Falta exigir la confirmación: el primario le contesta al cliente aunque ningún backup haya confirmado la operación. |
-| 4 | Detección de falla y elección | **Hecho.** El primario les late a todos cada segundo, y un backup que pasa 3 segundos sin latido lo da por caído y arranca una elección **Bully** con credenciales `(ultimo_seq, id)`: gana el más al día y, si empatan, el de id mayor (`nodo/membresia.py`). No se exige mayoría, así que con un solo nodo vivo el servicio sigue. La época sube en cada elección y viaja en todo mensaje: un primario viejo que vuelve se baja solo. Los clientes se enteran por redirección (fila 1). |
-| 5 | Reloj lógico de Lamport | **Hecho.** El cliente y el nodo tienen cada uno su reloj (`nodo/lamport.py`). Cada pedido sale estampado, el nodo se adelanta con `max(local, remoto) + 1` antes de estampar la operación, y el cliente hace lo mismo con cada respuesta. Los mensajes entre nodos también salen estampados, y cada nodo se adelanta con los que recibe. El sello queda guardado en la operación y ordena la lista de mesas libres igual en cualquier nodo. `python3 -m cliente.historial <mesa>` lo muestra: una columna con el sello de cada operación, que sigue subiendo aunque cambie el primario. |
-
-### Límites que conviene saber antes de la demo
-
-- **Un corte de red puede dejar dos primarios** hasta que vuelva. La elección
-  no exige mayoría, a propósito, para que el servicio siga con un solo nodo
-  vivo. Cuando la red vuelve, la época decide cuál queda, y lo que confirmó el
-  otro lado se pierde.
-- **Un nodo que vuelve tarda un latido en ponerse al día.** Entra como backup
-  y el primario le manda las operaciones que le faltan; en el log del primario
-  aparece `N3 quedo al dia en la op …`. Si justo en ese segundo se mata a los
-  otros dos, se corona sin las partidas.
-- **Se juega sin flor.** Es una decisión de alcance, explicada en `NOTAS.md`.
-  "El envido está primero" y las cadenas de envido sí están, con la pila de
-  cantos.
