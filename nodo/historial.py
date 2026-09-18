@@ -1,11 +1,3 @@
-# El log replicado contado como la cronica de una mesa: una linea por operacion,
-# con su seq, su epoca y su sello de Lamport. Es la vista del observador, igual
-# que vista.py es la del jugador. Todo dato plano, para que viaje por Pyro5.
-#
-# La semilla de la mesa NO sale por aca: cada renglon se arma como texto a
-# partir del tipo de op, nunca volcando datos. Con la semilla se deducirian las
-# cartas de los dos.
-
 from juego import Canto, Carta
 
 TEXTOS = {
@@ -47,8 +39,6 @@ def armar_historial(estado, id_mesa, desde=0):
 
 
 def resumir_mesas(estado):
-    """Todas las mesas, de la mas vieja a la mas nueva. El orden sale del sello
-    de Lamport de la op que las creo, asi que es el mismo en todos los nodos."""
     mesas = sorted(estado.mesas.values(), key=lambda mesa: (mesa.creada_en, mesa.id))
     return [resumen(mesa) for mesa in mesas]
 
@@ -74,8 +64,6 @@ def _estado(partida):
 
 
 def _mesa_de(estado, op):
-    """De que mesa es una op: crear y unirse la traen en datos, y las jugadas
-    salen de la sesion del que las pidio."""
     if op["tipo"] in ("crear", "unirse"):
         return op["datos"]["id_mesa"]
     sesion = estado.sesiones.get(op["id_sesion"])
@@ -90,7 +78,6 @@ def _quien(estado, op):
 
 
 def _resultado(cierre, mesa):
-    """Que cerro esta op: un envido, una mano, o las dos. None si no cerro nada."""
     if cierre is None:
         return None
     return " · ".join(_evento(evento, mesa) for evento in cierre["eventos"])

@@ -1,9 +1,3 @@
-# Muestra quien cree cada nodo que es el primario, preguntandole por Pyro5
-# como lo haria un cliente.
-#
-#   python3 -m cliente.quien_es             una vez
-#   python3 -m cliente.quien_es --seguir    cada segundo (Ctrl+C para salir)
-
 import sys
 import time
 
@@ -16,7 +10,6 @@ from nodo import config
 
 
 def consultar(nodo):
-    """Lo que contesta un nodo, o None si no contesta a tiempo."""
     return preguntar(nodo, "quien_es_primario")
 
 

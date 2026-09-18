@@ -52,11 +52,7 @@ class ServidorTruco:
     def _set_membresia(self, membresia):
         self.__membresia = membresia
 
-    # ---------- descubrimiento ----------
-
     def quien_es_primario(self, lamport=0):
-        """Lo contesta cualquier nodo: a quien cree que hay que hablarle (None
-        si hay una eleccion en curso) y que tan al dia esta."""
         self.reloj.recibir(lamport)
         return self._quien()
 
@@ -67,7 +63,6 @@ class ServidorTruco:
                     "ultimo_seq": self.estado.ultimo_seq, "reloj": self.reloj.valor}
 
     def _exigir_primario(self):
-        """Un backup no atiende: NoPrimario con el que cree que manda."""
         with self.lock:
             if self.rol != "primario":
                 raise NoPrimario(self.primario)
@@ -79,8 +74,6 @@ class ServidorTruco:
             return self.estado.buscar_sesion_por_nombre(nombre)
 
     def crear_partida(self, nombre, id_sesion, lamport=0):
-        """Crea una mesa y sienta al jugador 1. El id_sesion lo inventa el
-        cliente: si reintenta, no se crea otra mesa."""
         with self.lock:
             # lo que no es determinista se decide aca y viaja resuelto en la op
             datos = {"nombre": nombre, "id_mesa": self._id_mesa_libre(),
@@ -89,15 +82,13 @@ class ServidorTruco:
             return self._entrada(id_sesion)
 
     def unirse(self, id_partida, nombre, id_sesion, lamport=0):
-        """Sienta al jugador 2 y arranca la partida."""
+        #Sienta al jugador 2 y arranca la partida.
         with self.lock:
             self._atender("unirse", id_sesion, id_sesion, lamport,
                           {"nombre": nombre, "id_mesa": id_partida})
             return self._entrada(id_sesion)
 
     def listar_partidas(self, lamport=0):
-        """Las mesas esperando rival, en el orden en que se crearon (por su
-        sello de Lamport, que es el mismo en todos los nodos)."""
         with self.lock:
             self.reloj.recibir(lamport)
             self._exigir_primario()
@@ -109,28 +100,19 @@ class ServidorTruco:
     # ---------- seguir una partida desde afuera ----------
 
     def listar_mesas(self, lamport=0):
-        """Todas las mesas, no solo las que esperan rival: para elegir cual
-        seguir."""
         with self.lock:
             self.reloj.recibir(lamport)
             return {"mesas": resumir_mesas(self.estado),
                     "nodo": self.id_nodo, **self._quien()}
 
     def historial(self, id_mesa, desde=0, lamport=0):
-        """El log de una mesa, renglon por renglon.
-
-        Lo contesta cualquier nodo, y no solo el primario como el resto de las
-        lecturas: no alimenta ninguna decision del juego, es observabilidad como
-        quien_es_primario(). Y pedirle el mismo log a un backup es justamente lo
-        que muestra que la replicacion anda.
-        """
+        #El log de una mesa.
         with self.lock:
             self.reloj.recibir(lamport)
             return {**armar_historial(self.estado, id_mesa, desde),
                     "nodo": self.id_nodo, **self._quien()}
 
     def _id_mesa_libre(self):
-        """Seis letras al azar que no use otra mesa."""
         while True:
             id_mesa = uuid.uuid4().hex[:6]
             if id_mesa not in self.estado.mesas:
@@ -158,7 +140,6 @@ class ServidorTruco:
         return self._jugada("mazo", id_sesion, id_operacion, lamport, {})
 
     def _jugada(self, tipo, id_sesion, id_operacion, lamport, datos):
-        """Aplica la jugada y devuelve la vista, sin soltar el lock en el medio."""
         with self.lock:
             sello = self._atender(tipo, id_sesion, id_operacion, lamport, datos)
             return self._vista(id_sesion, sello)
@@ -201,8 +182,6 @@ class ServidorTruco:
     # ---------- el otro lado: lo que me replica el primario ----------
 
     def _atiendo_replica(self, op):
-        """Aplica la op que manda el primario. Devuelve None si quedo al dia,
-        o el motivo por el que no."""
         with self.lock:
             motivo = self._aplicar_replica(op)
             if motivo is None:
@@ -226,20 +205,6 @@ class ServidorTruco:
             return None
 
     def _aplicar_replica(self, op):
-        """El nucleo de las dos de arriba, sin loguear. Devuelve None si la
-        aplico, o por que no:
-
-            DUPLICADA  ya la tenia; llego dos veces y no hay nada que hacer
-            ATRASADO   me faltan ops antes de esta: el primario me tiene que
-                       poner al dia
-            ILEGAL     el motor la rechazo aunque al primario le funciono. Eso
-                       es que los estados divergieron, y mandarme el log no lo
-                       arregla: hay que mirar que dejo de ser determinista.
-
-        Se mira el seq antes de aplicar en vez de dejar que aplicar() tire
-        RuntimeError, porque ese error no distingue la op vieja de la futura y
-        son casos opuestos. Con el lock tomado.
-        """
         if not isinstance(op, dict) or "seq" not in op:
             return ILEGAL
         if op["seq"] <= self.estado.ultimo_seq:
@@ -289,8 +254,6 @@ def main():
         sys.exit(f"no puedo escuchar en el puerto del cluster {yo.puerto_cluster}: {error}. "
                  f"Si dice 'Address already in use', hay otro nodo con ese puerto.")
 
-    # Sin name server: el cliente usa la URI directa, y no hay otro proceso
-    # del que depender.
     daemon = Pyro5.api.Daemon(host="0.0.0.0", port=yo.puerto_pyro)
     daemon.register(servidor, NOMBRE_OBJETO)
     log.info(f"escuchando en PYRO:{NOMBRE_OBJETO}@<tu-ip>:{yo.puerto_pyro} "

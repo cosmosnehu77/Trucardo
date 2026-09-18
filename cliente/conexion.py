@@ -1,9 +1,3 @@
-# Como encuentra el cliente al primario, y como lo vuelve a encontrar si se
-# cae: si una llamada falla, le pregunta a otro nodo (un backup contesta
-# NoPrimario con quien manda) y reintenta la misma llamada. Como los
-# argumentos no cambian, el id_operacion es el mismo y el servidor no duplica
-# la jugada. Si en REINTENTO_TOTAL no atiende nadie, SinServicio.
-
 import itertools
 import time
 
@@ -26,9 +20,6 @@ class SinServicio(Exception):
 
 
 def preguntar(nodo, metodo, *args):
-    """Una llamada a UN nodo concreto, sin failover ni reintento: para las
-    herramientas que quieren saber que contesta cada uno. None si no contesta a
-    tiempo."""
     try:
         with Pyro5.api.Proxy(f"PYRO:{NOMBRE_OBJETO}@{nodo.host}:{nodo.puerto_pyro}") as proxy:
             proxy._pyroTimeout = config.TIMEOUT_RPC
@@ -40,8 +31,6 @@ def preguntar(nodo, metodo, *args):
 class Conexion:
     def __init__(self, nodos, reloj,
                  timeout=config.TIMEOUT_RPC, reintento_total=config.REINTENTO_TOTAL):
-        """El failover no se avisa: para el que llama, la llamada solo tarda
-        mas. Lo unico que sube es SinServicio."""
         self.nodos = nodos
         self.reloj = reloj
         self.timeout = timeout
@@ -51,8 +40,6 @@ class Conexion:
         self._orden = itertools.cycle(sorted(nodos))    # a quien preguntar si no se
 
     def llamar(self, metodo, *args):
-        """Llama a `metodo` en el primario. Agrega al final el sello de
-        Lamport, uno por intento. ValueError (jugada ilegal) pasa derecho."""
         desde = time.monotonic()
         redirigido = False
         while True:
@@ -85,8 +72,6 @@ class Conexion:
             time.sleep(PAUSA)
 
     def _proxy_a(self, id_nodo):
-        """Reusa el proxy mientras sea el mismo nodo. Con timeout: un nodo
-        congelado no cierra la conexion."""
         if self._proxy is not None and self._proxy[0] == id_nodo:
             return self._proxy[1]
         self._soltar()

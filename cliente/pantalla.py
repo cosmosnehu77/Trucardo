@@ -37,7 +37,6 @@ def dibujar(consola, vista):
 
 
 def carta(naipe, etiqueta=None):
-    """Una carta, o el hueco vacio si no hay. La etiqueta va sobre el borde."""
     if naipe is None:
         return Panel(Text("\n·\n", justify="center"), width=ANCHO,
                      border_style="grey37", padding=(0, 1))
@@ -76,8 +75,6 @@ def marcador(vista):
 
 
 def mesa(vista):
-    """Las cartas tiradas, una columna por ronda: arriba las del rival, abajo
-    las tuyas y en el medio quien gano."""
     rondas = vista["rondas"]
 
     # Sin justify en las columnas: rich reacomoda cada linea de la carta y
@@ -147,7 +144,6 @@ def apuestas(vista):
 
 
 def cadena(cantos):
-    """"envido + envido + real envido"."""
     return " + ".join(canto.upper() for canto in cantos)
 
 
@@ -179,14 +175,9 @@ def final(vista):
         return _cartel("GANASTE "+f"{vista['puntos']['yo']}"+"- "+f"{vista['puntos']['rival']}", gane)
     else:
         return _cartel("perdiste "+f"{vista['puntos']['yo']}"+"- "+f"{vista['puntos']['rival']}", gane)
-    #return _cartel(f"{'GANASTE' if gane else 'perdiste'}  " f"{vista['puntos']['yo']} - {vista['puntos']['rival']}", gane)
-
-
-# ---------- lo que se resolvio: envidos y manos ----------
 
 
 def _cartel(texto, gane, detalle=None, titulo=None):
-    """El panel de un resultado: verde si gane, rojo si no."""
     lineas = [Text(texto, justify="center", style="bold")]
     if detalle:
         lineas.append(Text(detalle, justify="center", style="dim"))
@@ -210,7 +201,6 @@ def resultado_envido(evento, vista):
 
 
 def resultado_mano(consola, evento, vista):
-    """Toda la pantalla: el marcador, como quedo la mesa y quien se la llevo."""
     consola.clear()
     consola.print(marcador(vista))
     if evento["rondas"]:
@@ -227,9 +217,6 @@ def resultado_mano(consola, evento, vista):
     else:
         detalle = None
     consola.print(_cartel(texto, gane, detalle, titulo=f"mano {evento['numero']}"))
-
-
-# ---------- sin servicio ----------
 
 
 def sin_servicio(error):

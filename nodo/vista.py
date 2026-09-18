@@ -1,16 +1,12 @@
-# Lo que ve UN jugador: sus cartas, la mesa y del rival solo lo publico. Todo
-# dato plano, para que viaje igual por Pyro5.
+# Lo que ve UN jugador: sus cartas, la mesa y del rival solo lo publico. Todo dato plano, para que viaje igual por Pyro5.
 
 from juego import EMPATE, Canto, rival
 
-# Entre dos consultas del cliente se resuelven uno o dos (un envido y la mano
-# si alguien se va al mazo): con los ultimos alcanza.
+# Entre dos consultas del cliente se resuelven uno o dos (un envido y la mano si alguien se va al mazo): con los ultimos alcanza.
 ULTIMOS_EVENTOS = 5
 
 
 def armar_vista(mesa, sesion, reloj):
-    """El dict que ve este jugador. Tiene siempre las mismas claves, en
-    cualquier estado, asi el cliente no tiene que preguntar antes de leer."""
     yo = sesion.jugador
     vista = {
         "id_partida": mesa.id,
@@ -81,8 +77,6 @@ def _evento(evento, yo):
 
 
 def _rondas(rondas_jugadas, pendiente, yo):
-    """Las rondas de una mano con las cartas enfrentadas (las tiradas son
-    publicas). La ronda a medio jugar viene con None en la carta que falta."""
     rondas = []
 
     for ronda in rondas_jugadas:
@@ -116,7 +110,6 @@ def _texto(canto):
 
 
 def _quien(jugador, yo):
-    """El 1/2 del motor como "yo" o "rival"."""
     if jugador is None or jugador == EMPATE:
         return None
     return "yo" if jugador == yo else "rival"

@@ -1,11 +1,3 @@
-# Configuracion por variables de entorno, la misma para nodos y clientes:
-#
-#   TRUCARDO_NODOS  "1@localhost:9501:9601,2@localhost:9502:9602,..."
-#                   (id@host:puerto_pyro:puerto_cluster). Sin definir, un solo
-#                   nodo en localhost:9500.
-#   PUNTOS          a cuanto se juegan las mesas nuevas (15).
-#   LOG_NIVEL       cuanto escribe el nodo (INFO).
-
 import os
 from typing import NamedTuple
 
@@ -31,8 +23,6 @@ class Nodo(NamedTuple):
 
 
 def nodos(texto=None):
-    """{id_nodo: Nodo}. Sin argumento lee TRUCARDO_NODOS. Si hay algo mal
-    escrito o un id repetido, ValueError."""
     if texto is None:
         texto = os.environ.get("TRUCARDO_NODOS", NODOS_POR_DEFECTO)
 
@@ -51,7 +41,6 @@ def nodos(texto=None):
 
 
 def _leer_nodo(entrada):
-    """'2@localhost:9502:9602' -> Nodo(2, 'localhost', 9502, 9602)."""
     try:
         id_texto, direccion = entrada.split("@")
         host, puerto_pyro, puerto_cluster = direccion.rsplit(":", 2)
@@ -69,7 +58,6 @@ def _leer_nodo(entrada):
 
 
 def puntos(texto=None):
-    """Sin argumento lee PUNTOS."""
     if texto is None:
         texto = os.environ.get("PUNTOS", str(PUNTOS_POR_DEFECTO))
     try:

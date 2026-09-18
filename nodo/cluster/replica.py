@@ -1,9 +1,9 @@
-# Mandarle las ops a los backups y poner al dia al que quedo atras.
-#
-# El camino normal es una op por mensaje (REPLICA). Cuando un backup contesta
-# ATRASADO -o cuando el latido lo ve con menos ops que las mias- se le manda el
-# pedazo de log que le falta (PUESTA_AL_DIA). Eso va siempre en un hilo aparte:
-# replicar() corre con el lock tomado y con un cliente esperando la respuesta.
+""" Mandarle las ops a los backups y poner al dia al que quedo atras.
+
+ El camino normal es una op por mensaje (REPLICA). Cuando un backup contesta
+ ATRASADO -o cuando el latido lo ve con menos ops que las mias- se le manda el
+ pedazo de log que le falta (PUESTA_AL_DIA). Eso va siempre en un hilo aparte:
+ replicar() corre con el lock tomado y con un cliente esperando la respuesta."""
 
 import threading
 
@@ -13,8 +13,6 @@ from nodo.registro import log
 
 
 class Replicador:
-    """El lado de la replica. Al resto lo alcanza por `self.m`, la Membresia:
-    nunca importa a los otros colaboradores."""
 
     def __init__(self, membresia):
         self.m = membresia
@@ -28,16 +26,7 @@ class Replicador:
     # ---------- del lado del primario ----------
 
     def replicar(self, operacion):
-        """Manda la op a todos y devuelve {id: respuesta} de los que contestaron.
-
-        Se llama con el lock tomado, para que las ops salgan en el orden en
-        que se aplicaron. Por eso aca no se espera nada largo: los motivos se
-        miran y se actua, pero la puesta al dia del atrasado se larga aparte.
-
-        Los dos motivos tienen consecuencias opuestas y por eso van separados:
-        EPOCA_VIEJA dice que el primario viejo soy yo y me bajo; ATRASADO dice
-        que el viejo es el otro y hay que ponerlo al dia.
-        """
+        #Manda la op a todos y devuelve {id: respuesta} de los que contestaron.
         nodo = self.m.nodo
         pedido = self.m.mensaje(REPLICA, op=operacion, ultimo_seq=nodo.estado.ultimo_seq)
         respuestas = self.m.preguntar_a_todos(pedido)
@@ -61,11 +50,8 @@ class Replicador:
         return respuestas
 
     def poner_al_dia_aparte(self, id_nodo, su_seq):
-        """Larga la puesta al dia en un hilo, una sola a la vez por nodo.
+        #Larga la puesta al dia en un hilo, una sola a la vez por nodo.
 
-        Sin esta guarda se largan varias encima: cada op que el backup rechaza
-        por ATRASADO, y cada latido mientras tanto, pediria una nueva.
-        """
         with self.m.nodo.lock:
             if id_nodo in self._poniendo_al_dia:
                 return
@@ -74,13 +60,7 @@ class Replicador:
                          daemon=True).start()
 
     def _poner_al_dia(self, id_nodo, su_seq):
-        """Le manda a N{id_nodo} las ops que le faltan, todas en un mensaje.
-
-        Van juntas y no de a una porque es un solo viaje, y el orden ya lo
-        garantiza aplicar(). El lock se toma nada mas que para copiar el pedazo
-        de log, nunca mientras se espera a la red: si no, el nodo entero se
-        queda quieto mientras un backup se pone al dia.
-        """
+        #Le manda a N{id_nodo} las ops que le faltan, todas en un mensaje.
         nodo = self.m.nodo
         try:
             with nodo.lock:
@@ -118,13 +98,7 @@ class Replicador:
     # ---------- del lado del backup ----------
 
     def _a_las_replicas(self, mensaje):
-        """REPLICA: aplico la op si viene del primario que reconozco. Cuenta
-        tambien como un latido.
-
-        El motivo lo decide el nodo, que es el unico que sabe por que no pudo;
-        aca solo se empaqueta. Que hacer con el lo decide el primario, que es
-        el unico que puede arreglarlo.
-        """
+        #REPLICA: aplico la op si viene del primario que reconozco. Cuenta tambien como un latido.
         origen, epoca = mensaje["origen"], mensaje.get("epoca", 0)
 
         with self.m.nodo.lock:
@@ -134,8 +108,6 @@ class Replicador:
             return self.m.respuesta(self.m.nodo._atiendo_replica(mensaje.get("op")))
 
     def _a_la_puesta_al_dia(self, mensaje):
-        """PUESTA_AL_DIA: las ops que me faltaban, en orden. Cuenta tambien
-        como un latido."""
         origen, epoca = mensaje["origen"], mensaje.get("epoca", 0)
 
         with self.m.nodo.lock:

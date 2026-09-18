@@ -1,20 +1,17 @@
-# El estado que se replica (mesas, sesiones y el log de ops) y la unica
-# funcion que lo cambia: aplicar(op).
-#
-# Una op es un pedido ya resuelto:
-#
-#     {"seq": 8, "epoca": 0, "lamport": 14, "tipo": "jugar",
-#      "id_sesion": "c0ffee...", "id_operacion": "9f3c...",
-#      "datos": {"carta": [7, "oro"]}}
-#
-# Dos nodos que aplican las mismas ops en el mismo orden llegan al mismo
-# estado, asi que aplicar() tiene que ser determinista: nada de azar, hora ni
-# red aca adentro. Lo que no es determinista lo decide el primario antes y
-# viaja en datos.
+""" El estado que se replica (mesas, sesiones y el log de ops) y la unica
+ funcion que lo cambia: aplicar(op).
+
+ Una op es un pedido ya resuelto:
+
+     {"seq": 8, "epoca": 0, "lamport": 14, "tipo": "jugar",
+      "id_sesion": "c0ffee...", "id_operacion": "9f3c...",
+      "datos": {"carta": [7, "oro"]}}
+
+ Dos nodos que aplican las mismas ops en el mismo orden llegan al mismo
+ estado, asi que aplicar() tiene que ser determinista."""
 
 from juego import Canto, Carta, Partida
 
-# Las jugadas sobre una partida ya arrancada.
 ACCIONES = {
     "jugar":     lambda partida, jugador, datos: partida.jugar(jugador, Carta(*datos["carta"])),
     "cantar":    lambda partida, jugador, datos: partida.cantar(jugador, Canto(datos["canto"])),
@@ -24,8 +21,6 @@ ACCIONES = {
 
 
 class Sesion:
-    """Un jugador sentado en una mesa. Guarda el id de la mesa y no la Mesa,
-    para que el estado no tenga ciclos."""
 
     def __init__(self, id_sesion, nombre, id_mesa, jugador):
         self.id_sesion = id_sesion
@@ -37,8 +32,6 @@ class Sesion:
 
 
 class Mesa:
-    """Una partida y los nombres de sus jugadores. La partida arranca cuando
-    se sienta el segundo."""
 
 
     def __init__(self, id_mesa, semilla, puntos, creada_en=0):
@@ -65,8 +58,7 @@ class EstadoServicio:
         self.ultimo_seq = 0
 
     def aplicar(self, op):
-        """Aplica la op y la agrega al log. Si es ilegal, ValueError sin haber
-        cambiado nada."""
+        #Aplica la op y la agrega al log.
         if op["seq"] != self.ultimo_seq + 1:
             raise RuntimeError(f"op {op['seq']} fuera de orden: "
                                f"la ultima aplicada es la {self.ultimo_seq}")
@@ -107,9 +99,9 @@ class EstadoServicio:
         id_mesa = datos["id_mesa"]
         if id_mesa in self.mesas:
             raise ValueError(f"ya existe la partida {id_mesa}")
-        
+
         self._verificar_sesion_nueva(id_sesion)
-        
+
         mesa = Mesa(id_mesa, datos["semilla"], datos["puntos"], creada_en=lamport)
         self.mesas[id_mesa] = mesa
         self._sentar(mesa, id_sesion, datos["nombre"], 1)
@@ -118,9 +110,9 @@ class EstadoServicio:
         mesa = self.mesa(datos["id_mesa"])
         if mesa.completa:
             raise ValueError(f"la mesa {mesa.id} ya tiene dos jugadores")
-        
-        self._verificar_sesion_nueva(id_sesion)    
-    
+
+        self._verificar_sesion_nueva(id_sesion)
+
         self._sentar(mesa, id_sesion, datos["nombre"], 2)
         mesa.partida = Partida(semilla=mesa.semilla, puntos_para_ganar=mesa.puntos)
 
@@ -129,10 +121,8 @@ class EstadoServicio:
             raise ValueError("falta el id_sesion")
         if id_sesion in self.sesiones:
             raise ValueError("ese id_sesion ya esta sentado en una mesa")
-        
+
     def buscar_sesion_por_nombre(self, nombre):
-        """La sesion mas nueva de ese nombre cuya partida sigue viva (en juego
-        o esperando rival). Una partida terminada no se retoma."""
         for sesion in reversed(list(self.sesiones.values())):
             if sesion.nombre != nombre:
                 continue

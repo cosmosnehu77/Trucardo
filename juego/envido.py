@@ -1,10 +1,4 @@
 def calcular_envido(cartas):
-    """Puntaje de envido (0 a 33): la mejor carta suelta, o 20 mas el mejor
-    par del mismo palo.
-
-        7 de oro, 6 de oro, 1 de copa   ->  33
-        7 de oro, 6 de copa, 5 de basto ->   7
-    """
     mejor = 0
 
     for i, una in enumerate(cartas):

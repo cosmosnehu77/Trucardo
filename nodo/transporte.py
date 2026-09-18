@@ -13,8 +13,7 @@ TIMEOUT_LECTURA = 2.0
 
 
 def enviar(direccion, mensaje, timeout):
-    """Manda un mensaje y devuelve la respuesta (un dict). Cualquier falla,
-    incluido no contestar en `timeout`, es OSError."""
+    #Manda un mensaje y devuelve la respuesta (un dict).
     with socket.create_connection(direccion, timeout=timeout) as conexion:
         conexion.settimeout(timeout)
         conexion.sendall(_linea(mensaje))

@@ -1,5 +1,4 @@
-# Reloj logico de Lamport: no dice que hora es, sino que paso antes. Cada
-# nodo y cada cliente tienen el suyo.
+# Cada nodo y cada cliente tienen el suyo.
 
 import threading
 

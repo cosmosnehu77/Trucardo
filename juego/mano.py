@@ -1,6 +1,3 @@
-# Una mano: las 3 rondas que se juegan con un reparto. "El mano" es el que
-# arranca, y desempata las pardas y el envido.
-
 from typing import NamedTuple
 
 from juego.carta import Carta
@@ -11,14 +8,12 @@ RONDAS_POR_MANO = 3
 
 
 class Ronda(NamedTuple):
-    """Las dos cartas de un enfrentamiento, siempre en orden (j1, j2)."""
 
     carta_j1: Carta
     carta_j2: Carta
 
     @property
     def ganador(self):
-        """1, 2 o EMPATE (parda)."""
         if self.carta_j1.valor_truco > self.carta_j2.valor_truco:
             return 1
         if self.carta_j2.valor_truco > self.carta_j1.valor_truco:
@@ -45,7 +40,6 @@ class Mano:
         return self.arranca
 
     def jugar(self, jugador, carta):
-        """Tira una carta; si con esta se completa la ronda, la cierra."""
         if self.terminada:
             raise ValueError("la mano ya termino")
         if jugador != self.turno:
@@ -80,11 +74,6 @@ class Mano:
 
     @property
     def ganador(self):
-        """1, 2, o None si no se decidio.
-
-        Gana el que gana 2 rondas. Si hubo parda, el primero que gano una
-        ronda. Con tres pardas, el mano.
-        """
         ganadores = [ronda.ganador for ronda in self.rondas]
 
         for jugador in (1, 2):
@@ -105,11 +94,9 @@ class Mano:
         return self.ganador is not None
 
     def envido(self, jugador):
-        """Sobre las cartas repartidas: no cambia al tirar una."""
         return calcular_envido(self.repartidas[jugador])
 
     def ganador_envido(self):
-        """1 o 2: si empatan, gana el mano."""
         puntos_j1 = self.envido(1)
         puntos_j2 = self.envido(2)
 

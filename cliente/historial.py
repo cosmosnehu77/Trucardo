@@ -1,12 +1,3 @@
-# Sigue una partida desde afuera: el log replicado de una mesa, renglon por
-# renglon, con su seq, su epoca y su sello de Lamport.
-#
-#   python3 -m cliente.historial                   las mesas que hay
-#   python3 -m cliente.historial 7dd845            el log de esa mesa
-#   python3 -m cliente.historial 7dd845 --seguir   se actualiza solo (Ctrl+C para salir)
-#   python3 -m cliente.historial 7dd845 --nodo 3   se lo pide a ese nodo
-#   python3 -m cliente.historial 7dd845 --todos    compara lo que tiene cada nodo
-
 import sys
 import time
 
@@ -24,8 +15,6 @@ COLUMNAS = (("seq", "right"), ("L", "right"), ("e", "right"),
 
 
 class Seguimiento:
-    """Los renglones que ya se trajeron. Pide solo los nuevos (desde el ultimo
-    seq que vio), asi en modo --seguir las lineas van apareciendo."""
 
     def __init__(self, id_mesa, traer):
         self.id_mesa = id_mesa
@@ -103,7 +92,6 @@ def mesas(consola, traer_mesas):
 
 
 def comparar(consola, cluster, id_mesa):
-    """Lo que tiene cada nodo de la misma mesa: si la replica anda, es igual."""
     salida = Table(title=f"mesa {id_mesa} en cada nodo · {time.strftime('%H:%M:%S')}")
     for columna in ("nodo", "rol", "epoca", "ultimo_seq", "renglones", "marcador",
                     "ultima operacion"):
@@ -185,9 +173,6 @@ def _mostrar(consola, seguimiento, seguir):
 
 
 def _primario(cluster):
-    """A quien preguntarle primero. El historial lo contesta cualquier nodo,
-    pero por defecto se le pide al primario; si se cae, la Conexion sigue sola
-    con el que quede."""
     for id_nodo, nodo in sorted(cluster.items()):
         respuesta = preguntar(nodo, "quien_es_primario", 0)
         if respuesta is not None and respuesta["primario"] in cluster:
@@ -196,7 +181,6 @@ def _primario(cluster):
 
 
 def _valor_de(bandera, argumentos):
-    """--nodo 3 y --nodo=3."""
     for i, argumento in enumerate(argumentos):
         if argumento == bandera and i + 1 < len(argumentos):
             return argumentos[i + 1]

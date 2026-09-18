@@ -9,8 +9,6 @@ log = logging.getLogger("trucardo")
 
 
 class _Prefijo(logging.Filter):
-    """Arma el prefijo en cada linea, porque rol, epoca y reloj cambian. No
-    toma el lock del nodo: loguear no puede quedarse esperando a otro hilo."""
 
     def __init__(self, nodo):
         super().__init__()
@@ -24,8 +22,6 @@ class _Prefijo(logging.Filter):
 
 
 def configurar(nodo, destino=None, nivel=None):
-    """Deja el log listo para este nodo. Sin llamarla (como en los tests) no
-    sale nada de INFO."""
     manejador = logging.StreamHandler(destino)
     manejador.addFilter(_Prefijo(nodo))
     manejador.setFormatter(logging.Formatter("%(asctime)s [%(prefijo)s] %(message)s",

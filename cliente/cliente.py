@@ -1,11 +1,3 @@
-# Cliente de consola.
-#
-#   python3 -m cliente.cliente [nombre]
-#
-# Muestra solo lo que manda el servidor: ni una regla del truco vive aca (el
-# menu sale de vista["cantos_posibles"]). Toda llamada pasa por la Conexion,
-# que encuentra al primario y reintenta si se cae.
-
 import sys
 import time
 import uuid
@@ -18,13 +10,11 @@ from cliente.conexion import Conexion, SinServicio
 from nodo import config
 from nodo.lamport import Reloj
 
-# Los tres del truco comparten la T: nunca se ofrecen dos a la vez.
 TECLAS = {
     "envido": "e", "real_envido": "r", "falta_envido": "f",
     "truco": "t", "retruco": "t", "vale_cuatro": "t",
 }
 
-# Cuanto queda a la vista cada resultado antes de seguir.
 PAUSA_ENVIDO = 2.5
 PAUSA_MANO = 3.5
 
@@ -56,14 +46,6 @@ class Cliente:
         elegida = libres[0]["id_partida"] if libres else ""
 
 
-        # Si volvemos a habilitar elegir una mesa libre manualmente
-        #  if libres:
-        #     # self.consola.print(pantalla.mesas_libres(libres))
-        #     # elegida = self.consola.input(
-        #     #     "[bold]Id de la mesa (Enter para crear una nueva):[/] ").strip()
-        # else:
-        #     self.consola.print("[dim]No hay mesas esperando. Creo una nueva.[/]")
-
         id_sesion = f"{nombre}-{uuid.uuid4().hex}"
 
         datos = (self._llamar("unirse", elegida, nombre, id_sesion) if elegida
@@ -76,8 +58,6 @@ class Cliente:
     # ---------- que puede hacer ----------
 
     def acciones(self, vista):
-        """El menu, armado con lo que dice el servidor. Contestando un canto
-        tambien se puede subir la apuesta: eso lo decide cantos_posibles."""
         if vista["canto_pendiente"] and vista["canto_pendiente"]["quien"] == "rival":
             acciones = [Accion("q", "QUIERO", "responder", True),
                         Accion("n", "NO QUIERO", "responder", False)]
@@ -109,18 +89,12 @@ class Cliente:
     # ---------- hablar con el servidor ----------
 
     def _llamar(self, metodo, *args):
-        """Toda llamada al servidor pasa por aca. Si se cae el primario, la
-        Conexion lo busca y reintenta sin que se note: la llamada solo tarda
-        mas. Si no atiende nadie, sube SinServicio."""
         return self.conexion.llamar(metodo, *args)
 
     def _id_operacion(self):
-        """Un uuid por cada cosa que decide el jugador: un contador se
-        repetiria al volver a abrir el cliente."""
         return uuid.uuid4().hex
 
     def _enviar(self, que, dato):
-        """El id_operacion se calcula una vez: un reintento lleva el mismo."""
         id_operacion = self._id_operacion()
         try:
             if que == "jugar":
@@ -136,15 +110,11 @@ class Cliente:
         time.sleep(1.5)
         return None
 
-    # ---------- lo que se resolvio ----------
 
     def _nuevos(self, vista):
-        """Los envidos y manos resueltos que todavia no mostre."""
         return [evento for evento in vista["eventos"] if evento["n"] > self._visto]
 
     def _mostrar_eventos(self, vista):
-        """Un cartel por cada resultado nuevo, con una pausa para leerlo. La
-        pausa es de este cliente: el servidor no espera a nadie."""
         nuevos = self._nuevos(vista)
         for evento in nuevos:
             if evento["tipo"] == "envido":
@@ -184,8 +154,6 @@ class Cliente:
                 self._esperar(vista["estado"] == "esperando_rival")
 
     def _esperar(self, falta_rival):
-        """Refresca solo hasta que me toque, o hasta que se resuelva algo que
-        haya que mostrar (asi los dos ven el resultado de la mano a la vez)."""
         aviso = "esperando que se sume el rival..." if falta_rival else "le toca al rival..."
         with self.consola.status(f"[dim]{aviso}[/]", spinner="dots"):
             while True:

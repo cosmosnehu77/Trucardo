@@ -1,10 +1,4 @@
 # La eleccion Bully: quien manda cuando el primario deja de latir.
-#
-# El que se queda sin primario se postula despues de un jitter al azar (para no
-# postularse todos juntos). Gana el de mejores credenciales -(ultimo_seq, id):
-# primero el mas al dia, y si empatan el id mayor- y se corona sin contar
-# votos, asi tambien puede mandar el ultimo nodo que quede vivo. Coronarse
-# gasta una epoca, y todo mensaje de una epoca vieja se rechaza.
 
 import random
 import threading
@@ -15,8 +9,6 @@ from nodo.registro import log
 
 
 class Eleccion:
-    """El lado de la eleccion. Al resto lo alcanza por `self.m`, la Membresia:
-    nunca importa a los otros colaboradores."""
 
     def __init__(self, membresia):
         self.m = membresia
@@ -29,14 +21,11 @@ class Eleccion:
 
     @property
     def convocando(self):
-        """Si hay una candidatura mia corriendo. La mira el vigia para no
-        confundirla con una eleccion colgada."""
         return self._convocando
 
     # ---------- postularme ----------
 
     def convocar_aparte(self):
-        """Larga convocar() en un hilo, una sola a la vez."""
         with self.m.nodo.lock:
             if self._convocando:
                 return
@@ -45,8 +34,6 @@ class Eleccion:
         threading.Thread(target=self.convocar, daemon=True).start()
 
     def convocar(self):
-        """Me postulo despues del jitter. Si nadie mejor me contesta, me corono:
-        sin contar votos, asi tambien puede mandar el ultimo nodo vivo."""
         nodo = self.m.nodo
         try:
             time.sleep(random.uniform(*self.m.jitter))
@@ -70,9 +57,6 @@ class Eleccion:
                 self._convocando = False
 
     def _coronarme(self, respuestas):
-        """Epoca nueva (la mayor que vi + 1), rol primario, y COORDINADOR a
-        todos. La epoca y la vista se calculan aca; escribirlas es de
-        Membresia, que es la duena de las transiciones de rol."""
         nodo = self.m.nodo
         with nodo.lock:
             vistas = [nodo.epoca] + [r.get("epoca", 0) for r in respuestas.values()]
@@ -84,13 +68,11 @@ class Eleccion:
         self.m.preguntar_a_todos(aviso)
 
     def _credenciales(self):
-        """Gana el mas al dia; si empatan, el id mayor. Con el lock tomado."""
         return (self.m.nodo.estado.ultimo_seq, self.m.nodo.id_nodo)
 
     # ---------- contestarle a los demas ----------
 
     def _al_eleccion(self, mensaje):
-        """ELECCION: le contesto si le gano, y si le gano me postulo yo."""
         suyas = (mensaje.get("ultimo_seq", 0), mensaje["origen"])
         su_epoca = mensaje.get("epoca", 0)
 
@@ -106,7 +88,6 @@ class Eleccion:
         return respuesta
 
     def al_coordinador(self, mensaje):
-        """COORDINADOR: adopto al ganador, salvo que no lo reconozca."""
         origen, epoca = mensaje["origen"], mensaje.get("epoca", 0)
 
         with self.m.nodo.lock:

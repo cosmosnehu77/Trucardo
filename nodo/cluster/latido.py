@@ -1,11 +1,5 @@
 # El latido y el vigia: los dos hilos periodicos que mantienen viva la vista
 # del cluster.
-#
-# El primario late cada `intervalo_latido` a todos los de la configuracion -no
-# solo a los que ya estan en la vista- asi el que vuelve entra solo. El backup
-# que pasa `timeout` sin latido da por caido al primario y arranca una
-# eleccion. La respuesta al latido trae el ultimo_seq del backup, que es por
-# donde se detecta al que quedo atrasado.
 
 import threading
 import time
@@ -16,8 +10,6 @@ from nodo.registro import log
 
 
 class Latido:
-    """El lado del latido. Al resto lo alcanza por `self.m`, la Membresia:
-    nunca importa a los otros colaboradores."""
 
     def __init__(self, membresia):
         self.m = membresia
@@ -27,17 +19,12 @@ class Latido:
         return {LATIDO: self._al_latido}
 
     def arrancar_hilos(self):
-        """Los dos hilos periodicos. Se apagan con el Event de la Membresia:
-        uno solo, para que detener() apague todo de una."""
         threading.Thread(target=self._latir, daemon=True).start()
         threading.Thread(target=self._vigilar, daemon=True).start()
 
     # ---------- del lado del primario ----------
 
     def _latir(self):
-        """Si soy primario, late a todos los de la configuracion (asi el que
-        vuelve entra solo a la vista). Un hilo por nodo: uno caido no atrasa
-        al resto."""
         nodo = self.m.nodo
         while not self.m.detenido.wait(self.m.intervalo_latido):
             with nodo.lock:
@@ -88,7 +75,6 @@ class Latido:
     # ---------- del lado del backup ----------
 
     def _al_latido(self, mensaje):
-        """Late el primario: lo adopto y le digo que tan al dia estoy."""
         origen, epoca = mensaje["origen"], mensaje.get("epoca", 0)
 
         with self.m.nodo.lock:
@@ -98,8 +84,6 @@ class Latido:
             return self.m.respuesta()
 
     def _vigilar(self):
-        """Si soy backup y el primario no late en `timeout`, lo doy por caido y
-        me postulo. Si la eleccion no termina, la reintento."""
         nodo = self.m.nodo
         while not self.m.detenido.wait(self.m.intervalo_latido / 2):
             with nodo.lock:
